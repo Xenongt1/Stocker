@@ -74,7 +74,6 @@ const InventoryPage  = ({ isAdmin, onNavigate, onLogout }) => {
                 <option value="Electronics">Electronics</option>
                 <option value="Furniture">Furniture</option>
                 <option value="Home">Home</option>
-                <option value="Soap">Soap</option>
               </select>
             </div>
             <div>

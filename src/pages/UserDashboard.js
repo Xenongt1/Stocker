@@ -1,13 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import { 
   ShoppingCart, 
   Package, 
   BarChart2, 
-  Camera 
+  Camera,
+  Eye,
+  EyeOff
 } from '../components/Icons';
-
-const UserDashboard = ({ onNavigate, onLogout }) => {
+import ProfilePicture from '../components/ProfilePicture';
+const UserDashboard = ({ onNavigate, onLogout, isAdmin = false , profileImage, onProfileUpdate}) => {
+    // State for hiding/showing sensitive financial data
+    const [showAmounts, setShowAmounts] = useState(false);
+    
     // Sample data for recent sales
     const recentSales = [
       { id: 1, product: 'Headphones', quantity: 2, amount: 119.98, date: '2025-04-12' },
@@ -15,17 +20,83 @@ const UserDashboard = ({ onNavigate, onLogout }) => {
       { id: 3, product: 'Laptop', quantity: 1, amount: 899.99, date: '2025-04-10' },
     ];
     
+    // Function to format amounts based on visibility state
+    const formatAmount = (amount) => {
+      if (isAdmin && showAmounts) {
+        return `$${amount.toFixed(2)}`;
+      } else {
+        return '********';
+      }
+    };
+
+    const [updateSuccess, setUpdateSuccess] = useState(false);
+
+    const handleProfileImageChange = (newImage) => {
+      // Call the parent handler to update the profile image in App.js
+      if (onProfileUpdate) {
+        onProfileUpdate(newImage);
+        
+        // Show success message briefly
+        setUpdateSuccess(true);
+        setTimeout(() => {
+          setUpdateSuccess(false);
+        }, 3000);
+      }
+    };
+    
+
+    const handleSaveSettings = () => {
+      // In a real application, you would save these settings to a database
+      // For now, just show a success message
+      setUpdateSuccess(true);
+      setTimeout(() => {
+        setUpdateSuccess(false);
+      }, 3000);
+    };
+
+    // Calculate today's sales total
+    const todaySalesTotal = recentSales
+      .filter(sale => sale.date === '2025-04-12')
+      .reduce((sum, sale) => sum + sale.amount, 0);
+      
+    // Toggle visibility function - only available to admin
+    const toggleAmountVisibility = () => {
+      if (isAdmin) {
+        setShowAmounts(!showAmounts);
+      }
+    };
+    
     return (
       <div className="min-h-screen flex flex-col lg:flex-row">
-        <Sidebar isAdmin={false} activePage="userDashboard" onNavigate={onNavigate} onLogout={onLogout} />
+        
+      <Sidebar 
+        isAdmin={isAdmin} 
+        activePage="settings" 
+        onNavigate={onNavigate} 
+        onLogout={onLogout}
+        profileImage={profileImage}
+      />
         
         <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
           <h2 className="text-xl sm:text-2xl font-bold mb-4">User Dashboard</h2>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <div className="bg-white p-4 rounded shadow">
-              <h3 className="text-gray-500">Today's Sales</h3>
-              <p className="text-xl sm:text-2xl font-bold">$269.97</p>
+              <div className="flex justify-between items-center">
+                <h3 className="text-gray-500">Today's Sales</h3>
+                {isAdmin && (
+                  <button 
+                    onClick={toggleAmountVisibility} 
+                    className="text-gray-500 hover:text-gray-700 focus:outline-none"
+                    aria-label={showAmounts ? "Hide amounts" : "Show amounts"}
+                  >
+                    {showAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                )}
+              </div>
+              <p className="text-xl sm:text-2xl font-bold">
+                {formatAmount(todaySalesTotal)}
+              </p>
             </div>
             <div className="bg-white p-4 rounded shadow">
               <h3 className="text-gray-500">Items Sold Today</h3>
@@ -47,12 +118,23 @@ const UserDashboard = ({ onNavigate, onLogout }) => {
             <div className="bg-white p-4 rounded shadow">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold">Recent Sales</h3>
-                <button 
-                  className="text-blue-500 text-sm hover:underline"
-                  onClick={() => onNavigate('sales')}
-                >
-                  Go to sales
-                </button>
+                <div className="flex items-center space-x-2">
+                  {isAdmin && (
+                    <button 
+                      onClick={toggleAmountVisibility} 
+                      className="text-gray-500 hover:text-gray-700 focus:outline-none"
+                      aria-label={showAmounts ? "Hide amounts" : "Show amounts"}
+                    >
+                      {showAmounts ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  )}
+                  <button 
+                    className="text-blue-500 text-sm hover:underline"
+                    onClick={() => onNavigate('sales')}
+                  >
+                    Go to sales
+                  </button>
+                </div>
               </div>
               
               <div className="overflow-x-auto">
@@ -70,7 +152,11 @@ const UserDashboard = ({ onNavigate, onLogout }) => {
                       <tr key={sale.id} className="border-b">
                         <td className="py-2">{sale.product}</td>
                         <td className="py-2">{sale.quantity}</td>
-                        <td className="py-2">${sale.amount.toFixed(2)}</td>
+                        <td className="py-2">
+                          <span className={!isAdmin ? "text-gray-400" : ""}>
+                            {formatAmount(sale.amount)}
+                          </span>
+                        </td>
                         <td className="py-2">{sale.date}</td>
                       </tr>
                     ))}
@@ -109,7 +195,7 @@ const UserDashboard = ({ onNavigate, onLogout }) => {
                 
                 <button 
                   className="bg-purple-100 text-purple-800 p-4 rounded flex flex-col items-center justify-center"
-                  onClick={() => onNavigate('settings')}
+                  onClick={() => onNavigate('inventory', { showScanner: true })}
                 >
                   <Camera size={24} className="mb-2" />
                   <span>Scan Barcode</span>

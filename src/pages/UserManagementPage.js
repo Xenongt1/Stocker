@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import Modal from '../components/Modal';
+import ProfilePicture from '../components/ProfilePicture';
 
-
-const UserManagementPage = ({ onNavigate, onLogout }) => {
+const UserManagementPage = ({ onNavigate, onLogout , profileImage, onProfileUpdate}) => {
   const [users, setUsers] = useState([
     { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', status: 'active', lastLogin: '2025-04-12 09:15' },
     { id: 2, username: 'john', email: 'john@example.com', role: 'user', status: 'active', lastLogin: '2025-04-11 14:30' },
@@ -19,6 +19,33 @@ const UserManagementPage = ({ onNavigate, onLogout }) => {
     role: 'user',
   });
   
+const [updateSuccess, setUpdateSuccess] = useState(false);
+
+    const handleProfileImageChange = (newImage) => {
+      // Call the parent handler to update the profile image in App.js
+      if (onProfileUpdate) {
+        onProfileUpdate(newImage);
+        
+        // Show success message briefly
+        setUpdateSuccess(true);
+        setTimeout(() => {
+          setUpdateSuccess(false);
+        }, 3000);
+      }
+    };
+    
+
+    const handleSaveSettings = () => {
+      // In a real application, you would save these settings to a database
+      // For now, just show a success message
+      setUpdateSuccess(true);
+      setTimeout(() => {
+        setUpdateSuccess(false);
+      }, 3000);
+    };
+
+
+
   // Add new user
   const handleAddUser = () => {
     const userToAdd = {
@@ -49,7 +76,14 @@ const UserManagementPage = ({ onNavigate, onLogout }) => {
   
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      <Sidebar isAdmin={true} activePage="users" onNavigate={onNavigate} onLogout={onLogout} />
+        
+    <Sidebar 
+      isAdmin={true} 
+      activePage="UserManagement" 
+      onNavigate={onNavigate} 
+      onLogout={onLogout}
+      profileImage={profileImage}
+    />
       
       <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">

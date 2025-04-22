@@ -1,8 +1,9 @@
 import React from 'react';
 import Sidebar from '../components/Sidebar';
 import SalesSummary from '../components/SalesSummary';
-
-const AdminDashboard = ({ onNavigate, onLogout }) => {
+import ProfilePicture from '../components/ProfilePicture';
+import { useState } from 'react';
+const AdminDashboard = ({ onNavigate, onLogout, profileImage, onProfileUpdate }) => {
     // Sample data
     const salesByCategory = [
       { name: 'Electronics', value: 15000 },
@@ -16,16 +17,50 @@ const AdminDashboard = ({ onNavigate, onLogout }) => {
       { id: 2, name: 'Wireless Mouse', category: 'Electronics', quantity: 4, threshold: 10 },
       { id: 3, name: 'Desk Lamp', category: 'Accessories', quantity: 2, threshold: 5 },
     ];
+    const [updateSuccess, setUpdateSuccess] = useState(false);
+    
+        const handleProfileImageChange = (newImage) => {
+          // Call the parent handler to update the profile image in App.js
+          if (onProfileUpdate) {
+            onProfileUpdate(newImage);
+            
+            // Show success message briefly
+            setUpdateSuccess(true);
+            setTimeout(() => {
+              setUpdateSuccess(false);
+            }, 3000);
+          }
+        };
+        
+    
+        const handleSaveSettings = () => {
+          // In a real application, you would save these settings to a database
+          // For now, just show a success message
+          setUpdateSuccess(true);
+          setTimeout(() => {
+            setUpdateSuccess(false);
+          }, 3000);
+        };
     
     const recentOrders = [
       { id: 'ORD-001', date: '2025-04-12', customer: 'John Doe', items: 3, total: 319.97, status: 'Completed' },
       { id: 'ORD-002', date: '2025-04-11', customer: 'Jane Smith', items: 1, total: 899.99, status: 'Completed' },
       { id: 'ORD-003', date: '2025-04-10', customer: 'Bob Johnson', items: 2, total: 89.98, status: 'Completed' },
     ];
+
+    
     
     return (
-      <div className="min-h-screen flex flex-col lg:flex-row">
-        <Sidebar isAdmin={true} activePage="adminDashboard" onNavigate={onNavigate} onLogout={onLogout} />
+     
+        <div className="min-h-screen flex flex-col lg:flex-row">
+        
+        <Sidebar 
+          isAdmin={true} 
+          activePage="adminDashboard" 
+          onNavigate={onNavigate} 
+          onLogout={onLogout}
+          profileImage={profileImage}
+        />
         
         <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
           <h2 className="text-xl sm:text-2xl font-bold mb-4">Admin Dashboard</h2>

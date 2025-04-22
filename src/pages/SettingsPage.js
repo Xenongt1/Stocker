@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import Modal from '../components/Modal';
+import ProfilePicture from '../components/ProfilePicture';
 
 // Settings Page Component
-const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
+const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
   const [generalSettings, setGeneralSettings] = useState({
     storeName: 'InventoryPro Store',
     currency: 'USD',
@@ -13,6 +14,7 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
   });
   
   const [activeTab, setActiveTab] = useState('general');
+  const [updateSuccess, setUpdateSuccess] = useState(false);
   
   // For regular users, we'll only show account tab with limited options
   // If user is not admin and tries to access other tabs, redirect to account tab
@@ -20,12 +22,52 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
     setActiveTab('account');
   }
   
+  const handleProfileImageChange = (newImage) => {
+    // Call the parent handler to update the profile image in App.js
+    if (onProfileUpdate) {
+      onProfileUpdate(newImage);
+      
+      // Show success message briefly
+      setUpdateSuccess(true);
+      setTimeout(() => {
+        setUpdateSuccess(false);
+      }, 3000);
+    }
+  };
+  
+  const handleSaveSettings = () => {
+    // In a real application, you would save these settings to a database
+    // For now, just show a success message
+    setUpdateSuccess(true);
+    setTimeout(() => {
+      setUpdateSuccess(false);
+    }, 3000);
+  };
+  
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      <Sidebar isAdmin={isAdmin} activePage="settings" onNavigate={onNavigate} onLogout={onLogout} />
+      <Sidebar 
+        isAdmin={isAdmin} 
+        activePage="settings" 
+        onNavigate={onNavigate} 
+        onLogout={onLogout}
+        profileImage={profileImage}
+      />
       
       <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
         <h2 className="text-xl sm:text-2xl font-bold mb-4">Settings</h2>
+        
+        {updateSuccess && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+            <span>Settings updated successfully!</span>
+            <button 
+              onClick={() => setUpdateSuccess(false)}
+              className="text-green-700"
+            >
+              &times;
+            </button>
+          </div>
+        )}
         
         <div className="bg-white rounded shadow overflow-hidden">
           {/* Settings navigation - only show Account tab for regular users */}
@@ -123,7 +165,10 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                 </div>
                 
                 <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded">
+                  <button 
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleSaveSettings}
+                  >
                     Save Changes
                   </button>
                 </div>
@@ -134,18 +179,18 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold mb-2">Account Settings</h3>
                 
-                {isAdmin && (
-                  <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
-                    <div className="w-20 h-20 rounded-full bg-blue-500 flex items-center justify-center text-white text-2xl font-bold">
-                      {isAdmin ? 'A' : 'U'}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-lg">{isAdmin ? 'Admin User' : 'Store User'}</h4>
-                      <p className="text-gray-600">{isAdmin ? 'admin@example.com' : 'user@example.com'}</p>
-                      <button className="text-blue-600 text-sm hover:underline mt-1">Change Profile Picture</button>
-                    </div>
+                <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
+                  <ProfilePicture 
+                    initialImage={profileImage}
+                    userName={isAdmin ? 'Admin' : 'User'}
+                    isAdmin={isAdmin}
+                    onImageChange={handleProfileImageChange}
+                  />
+                  <div>
+                    <h4 className="font-bold text-lg">{isAdmin ? 'Admin User' : 'Store User'}</h4>
+                    <p className="text-gray-600">{isAdmin ? 'admin@example.com' : 'user@example.com'}</p>
                   </div>
-                )}
+                </div>
                 
                 {/* For regular users, only show username and password fields */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -198,7 +243,7 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                 </div>
                 
                 <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded">
+                  <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
                     Update Account
                   </button>
                 </div>
@@ -235,7 +280,7 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                     <h4 className="font-medium">Database Backup</h4>
                       <p className="text-sm text-gray-600">Last backup: 2025-04-12 03:00</p>
                     </div>
-                    <button className="bg-blue-600 text-white px-3 py-1 rounded">
+                    <button className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors">
                       Backup Now
                     </button>
                   </div>
@@ -247,14 +292,17 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                       <h4 className="font-medium">System Logs</h4>
                       <p className="text-sm text-gray-600">View application logs and activity</p>
                     </div>
-                    <button className="bg-blue-600 text-white px-3 py-1 rounded">
+                    <button className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors">
                       View Logs
                     </button>
                   </div>
                 </div>
                 
                 <div className="flex justify-end mt-6">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded">
+                  <button 
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleSaveSettings}  
+                  >
                     Save System Settings
                   </button>
                 </div>
@@ -276,93 +324,12 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                     </thead>
                     <tbody>
                       <tr className="border-b">
-                        <td className="py-2">View Dashboard</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Manage Inventory</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Process Sales</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">View Reports</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Apply Discounts</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Set Unlimited Discounts</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Edit Prices</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">View Cost Prices</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
-                        <td className="py-2">Manage Users</td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
-                        </td>
-                        <td className="py-2 text-center">
-                          <input type="checkbox" disabled />
-                        </td>
-                      </tr>
-                      <tr className="border-b">
                         <td className="py-2">System Settings</td>
                         <td className="py-2 text-center">
-                          <input type="checkbox" checked disabled />
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
                         </td>
                         <td className="py-2 text-center">
-                          <input type="checkbox" disabled />
+                          <input type="checkbox" disabled className="h-4 w-4 text-blue-600" />
                         </td>
                       </tr>
                     </tbody>
@@ -370,7 +337,10 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout }) => {
                 </div>
                 
                 <div className="flex justify-end mt-6">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded">
+                  <button 
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleSaveSettings}
+                  >
                     Save Permissions
                   </button>
                 </div>

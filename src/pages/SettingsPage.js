@@ -321,7 +321,6 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                 <div className="flex justify-end mt-6">
                   <button 
                     className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                    onClick={handleSaveSettings}  
                   >
                     Save System Settings
                   </button>

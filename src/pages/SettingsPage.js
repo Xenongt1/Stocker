@@ -2,15 +2,22 @@ import React, { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import Modal from '../components/Modal';
 import ProfilePicture from '../components/ProfilePicture';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 // Settings Page Component
 const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
+  const [username, setUsername] = useState(isAdmin ? 'admin' : 'user');
+const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example.com');
+
+  const { settings, updateSettings } = useAppSettings();
+  
   const [generalSettings, setGeneralSettings] = useState({
-    storeName: 'InventoryPro Store',
-    currency: 'USD',
-    taxRate: '7.5',
-    lowStockThreshold: '5',
-    receiptFooter: 'Thank you for your purchase!',
+    storeName: settings.storeName,
+    currency: settings.currency,
+    taxRate: String(settings.taxRate),
+    lowStockThreshold: String(settings.lowStockThreshold),
+    receiptFooter: settings.receiptFooter,
+    
   });
   
   const [activeTab, setActiveTab] = useState('general');
@@ -36,8 +43,16 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUp
   };
   
   const handleSaveSettings = () => {
-    // In a real application, you would save these settings to a database
-    // For now, just show a success message
+    // Update the context with new settings
+    updateSettings({
+      storeName: generalSettings.storeName,
+      currency: generalSettings.currency,
+      taxRate: parseFloat(generalSettings.taxRate),
+      lowStockThreshold: parseInt(generalSettings.lowStockThreshold),
+      receiptFooter: generalSettings.receiptFooter,
+    });
+    
+    // Show success message
     setUpdateSuccess(true);
     setTimeout(() => {
       setUpdateSuccess(false);
@@ -195,12 +210,15 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUp
                 {/* For regular users, only show username and password fields */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
                     <input 
                       type="text" 
                       className="w-full p-2 border rounded" 
-                      value={isAdmin ? 'admin' : 'user'}
+                      value={generalSettings.storeName}
+                      onChange={(e) => setGeneralSettings({...generalSettings, storeName: e.target.value})}
                     />
+
+
                   </div>
                   
                   {/* Only show email field for admins */}
@@ -208,10 +226,11 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUp
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                       <input 
-                        type="email" 
-                        className="w-full p-2 border rounded" 
-                        value={isAdmin ? 'admin@example.com' : 'user@example.com'}
-                      />
+                      type="email" 
+                      className="w-full p-2 border rounded" 
+                      value={email}
+                      onChange={(e) => setGeneralSettings({ ...generalSettings, email: e.target.value })}
+                    />
                     </div>
                   )}
                 </div>
@@ -243,7 +262,8 @@ const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUp
                 </div>
                 
                 <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
+                  <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"  
+                    onClick={handleSaveSettings}>
                     Update Account
                   </button>
                 </div>

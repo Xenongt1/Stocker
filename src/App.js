@@ -10,6 +10,7 @@ import SettingsPage from './pages/SettingsPage';
 import AccessDenied from './pages/AccessDenied';
 import {FullPageLoader} from './components/LoadingState';
 import { NotificationProvider } from './components/NotificationSystem';
+import { AppSettingsProvider } from './context/AppSettingsContext';
 
 function App() {
   const [page, setPage] = useState('login');
@@ -101,12 +102,15 @@ function App() {
   };
   
   return (
-    <NotificationProvider>
-      <div className="bg-gray-100 min-h-screen">
-        {isLoading && <FullPageLoader />}
-        {renderPage()}
-      </div>
-    </NotificationProvider>
+    
+    <AppSettingsProvider>
+      <NotificationProvider>
+        <div className="bg-gray-100 min-h-screen">
+          {isLoading && <FullPageLoader />}
+          {renderPage()}
+        </div>
+      </NotificationProvider>
+    </AppSettingsProvider>
   );
 }
 

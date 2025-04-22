@@ -3,6 +3,8 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { Printer, Download, Mail } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useAppSettings } from '../context/AppSettingsContext';
+
 
 /**
  * Receipt component for displaying and printing sales receipts
@@ -13,7 +15,20 @@ import jsPDF from 'jspdf';
  * @param {string} props.footerText - Optional footer text for the receipt
  * @param {function} props.onClose - Function to close the receipt modal
  */
-const Receipt = ({ sale, storeName = "Stocker Store", currency = "USD", footerText = "Thank you for your purchase!", onClose }) => {
+const Receipt = ({ 
+    sale, 
+    storeName, 
+    currency, 
+    footerText, 
+    onClose 
+  }) => {
+
+    const { settings } = useAppSettings();
+  
+  // Use context values as fallbacks if props aren't provided
+  const effectiveStoreName = storeName || settings.storeName;
+  const effectiveCurrency = currency || settings.currency;
+  const effectiveFooterText = footerText || settings.receiptFooter;
   const receiptRef = useRef(null);
   
   // Get current date and time for receipt
@@ -220,9 +235,9 @@ const Receipt = ({ sale, storeName = "Stocker Store", currency = "USD", footerTe
             
             {/* Footer */}
             <div className="text-center text-xs mt-6 pt-2 border-t">
-              <p>{footerText}</p>
-              <p className="mt-2">Visit us again soon!</p>
-            </div>
+    <p>{effectiveFooterText}</p>
+    <p className="mt-2">Visit us again soon!</p>
+  </div>
           </div>
         </div>
       </div>

@@ -1,18 +1,25 @@
 import React, { useRef } from 'react';
 import { formatCurrency } from '../utils/formatCurrency';
-
+import { useAppSettings } from '../context/AppSettingsContext';
+import Receipt from './Receipt';
 const ReceiptGenerator = ({ 
   receiptData,
-  storeName = 'Stocker',
+  storeName,
   storeAddress = '123 Store Street, City',
   storePhone = '(555) 123-4567',
   storeEmail = 'contact@stocker.com',
-  currency = 'USD',
-  taxRate = 7.5,
-  receiptFooter = 'Thank you for your purchase!',
+  currency,
+  taxRate,
   onPrint,
   onClose
 }) => {
+  const { settings } = useAppSettings();
+  
+  // Use context values as fallbacks if props aren't provided
+  const effectiveStoreName = storeName || settings.storeName;
+  const effectiveCurrency = currency || settings.currency;
+  const effectiveTaxRate = taxRate || settings.taxRate;
+  const receiptFooter = settings.receiptFooter;
   const receiptRef = useRef(null);
   
   const { 
@@ -224,6 +231,9 @@ const ReceiptGenerator = ({
             >
               Print Receipt
             </button>
+            <div className="receipt-footer text-center mt-6 pt-2 border-t border-dashed border-gray-400">
+    <p>{receiptFooter}</p>
+  </div>
           </div>
         </div>
       </div>

@@ -13,20 +13,32 @@ import ConfirmationDialog from '../components/ConfirmationDialog';
 import BarcodeScanner from '../components/BarcodeScanner';
 import { ComponentLoader } from '../components/LoadingState';
 import ProfilePicture from '../components/ProfilePicture';
-const InventoryPage = ({ isAdmin, onNavigate, onLogout,profileImage, onProfileUpdate }) => {
-  // INITIAL PRODUCTS DATA
-  const initialProducts = [
-    { id: 1, name: 'Laptop', sku: 'TECH001', price: 999.99, costPrice: 750, quantity: 15, category: 'Electronics', description: 'High performance laptop with SSD', minStockLevel: 10 },
-    { id: 2, name: 'Headphones', sku: 'TECH002', price: 59.99, costPrice: 35, quantity: 30, category: 'Electronics', description: 'Noise cancelling wireless headphones', minStockLevel: 15 },
-    { id: 3, name: 'Office Chair', sku: 'FURN001', price: 149.99, costPrice: 100, quantity: 8, category: 'Furniture', description: 'Ergonomic office chair with lumbar support', minStockLevel: 5 },
-    { id: 4, name: 'Desk Lamp', sku: 'HOME001', price: 29.99, costPrice: 15, quantity: 5, category: 'Home', description: 'LED desk lamp with adjustable brightness', minStockLevel: 8 },
-    { id: 5, name: 'Wireless Mouse', sku: 'TECH003', price: 24.99, costPrice: 12, quantity: 3, category: 'Electronics', description: 'Bluetooth wireless mouse', minStockLevel: 10 },
-  ];
-  
+import axios from 'axios';
+
+// Create axios instance with base URL
+const api = axios.create({
+  baseURL: 'http://localhost:5000/api'
+});
+
+// Add a request interceptor to include the auth token with every request
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['x-auth-token'] = token;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
   // STATE
-  const [products, setProducts] = useState(initialProducts);
-  const [filteredProducts, setFilteredProducts] = useState(initialProducts);
-  const [isLoading, setIsLoading] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFilters, setSearchFilters] = useState({});
   
@@ -55,12 +67,33 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout,profileImage, onProfileUp
   const searchTimeoutRef = useRef(null);
   const isSearchingRef = useRef(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  
+  // NOTIFICATION
+  const { success, error: showError } = useNotification();
+  
+  // Fetch products on component mount
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+  
+  // Fetch products from API
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get('/products');
+      setProducts(response.data);
+      setFilteredProducts(response.data);
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      showError(err.response?.data?.msg || 'Failed to fetch products. Please check your connection.');
+      setIsLoading(false);
+    }
+  };
+  
   const handleProfileImageChange = (newImage) => {
-    // Call the parent handler to update the profile image in App.js
     if (onProfileUpdate) {
       onProfileUpdate(newImage);
-      
-      // Show success message briefly
       setUpdateSuccess(true);
       setTimeout(() => {
         setUpdateSuccess(false);
@@ -69,105 +102,96 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout,profileImage, onProfileUp
   };
 
   const handleSaveSettings = () => {
-    // In a real application, you would save these settings to a database
-    // For now, just show a success message
     setUpdateSuccess(true);
     setTimeout(() => {
       setUpdateSuccess(false);
     }, 3000);
   };
   
-  // NOTIFICATION
-  const { success, error: showError } = useNotification();
-  
-  // SEARCH HANDLING - completely rewritten
-  // Replace your handleSearch function with this simplified version
-const handleSearch = (searchData) => {
-  // Don't set loading state at all - just do the filtering synchronously
-  
-  // Apply filtering
-  let filtered = [...products];
-  
-  // Process simple search
-  if (typeof searchData === 'string') {
-    const term = searchData.toLowerCase();
-    if (term) {
-      filtered = filtered.filter(product => 
-        product.name.toLowerCase().includes(term) || 
-        product.sku.toLowerCase().includes(term) ||
-        product.category.toLowerCase().includes(term)
-      );
-    }
-  } 
-  // Process advanced search
-  else if (searchData && typeof searchData === 'object') {
-    const { searchTerm, filters } = searchData;
+  // SEARCH HANDLING
+  const handleSearch = (searchData) => {
+    let filtered = [...products];
     
-    // Filter by search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(product => 
-        product.name.toLowerCase().includes(term) || 
-        product.sku.toLowerCase().includes(term) ||
-        product.category.toLowerCase().includes(term)
-      );
-    }
-    
-    // Apply additional filters if they exist
-    if (filters) {
-      const { category, stockStatus, sortBy } = filters;
+    // Process simple search
+    if (typeof searchData === 'string') {
+      const term = searchData.toLowerCase();
+      if (term) {
+        filtered = filtered.filter(product => 
+          product.name.toLowerCase().includes(term) || 
+          product.sku.toLowerCase().includes(term) ||
+          product.category.toLowerCase().includes(term)
+        );
+      }
+    } 
+    // Process advanced search
+    else if (searchData && typeof searchData === 'object') {
+      const { searchTerm, filters } = searchData;
       
-      // Category filter
-      if (category) {
-        filtered = filtered.filter(product => product.category === category);
+      // Filter by search term
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        filtered = filtered.filter(product => 
+          product.name.toLowerCase().includes(term) || 
+          product.sku.toLowerCase().includes(term) ||
+          product.category.toLowerCase().includes(term)
+        );
       }
       
-      // Stock status filter
-      if (stockStatus) {
-        switch (stockStatus) {
-          case 'inStock':
-            filtered = filtered.filter(product => product.quantity > product.minStockLevel);
-            break;
-          case 'lowStock':
-            filtered = filtered.filter(product => 
-              product.quantity <= product.minStockLevel && product.quantity > 0
-            );
-            break;
-          case 'outOfStock':
-            filtered = filtered.filter(product => product.quantity <= 0);
-            break;
+      // Apply additional filters if they exist
+      if (filters) {
+        const { category, stockStatus, sortBy } = filters;
+        
+        // Category filter
+        if (category) {
+          filtered = filtered.filter(product => product.category === category);
         }
-      }
-      
-      // Sorting
-      if (sortBy) {
-        switch (sortBy) {
-          case 'name':
-            filtered.sort((a, b) => a.name.localeCompare(b.name));
-            break;
-          case 'nameDesc':
-            filtered.sort((a, b) => b.name.localeCompare(a.name));
-            break;
-          case 'priceLow':
-            filtered.sort((a, b) => a.price - b.price);
-            break;
-          case 'priceHigh':
-            filtered.sort((a, b) => b.price - a.price);
-            break;
-          case 'quantityLow':
-            filtered.sort((a, b) => a.quantity - b.quantity);
-            break;
-          case 'quantityHigh':
-            filtered.sort((a, b) => b.quantity - a.quantity);
-            break;
+        
+        // Stock status filter
+        if (stockStatus) {
+          switch (stockStatus) {
+            case 'inStock':
+              filtered = filtered.filter(product => product.quantity > product.minStockLevel);
+              break;
+            case 'lowStock':
+              filtered = filtered.filter(product => 
+                product.quantity <= product.minStockLevel && product.quantity > 0
+              );
+              break;
+            case 'outOfStock':
+              filtered = filtered.filter(product => product.quantity <= 0);
+              break;
+          }
+        }
+        
+        // Sorting
+        if (sortBy) {
+          switch (sortBy) {
+            case 'name':
+              filtered.sort((a, b) => a.name.localeCompare(b.name));
+              break;
+            case 'nameDesc':
+              filtered.sort((a, b) => b.name.localeCompare(a.name));
+              break;
+            case 'priceLow':
+              filtered.sort((a, b) => a.price - b.price);
+              break;
+            case 'priceHigh':
+              filtered.sort((a, b) => b.price - a.price);
+              break;
+            case 'quantityLow':
+              filtered.sort((a, b) => a.quantity - b.quantity);
+              break;
+            case 'quantityHigh':
+              filtered.sort((a, b) => b.quantity - a.quantity);
+              break;
+          }
         }
       }
     }
-  }
-  
-  // Update filtered products directly - no loading state
-  setFilteredProducts(filtered);
-};
+    
+    // Update filtered products
+    setFilteredProducts(filtered);
+  };
   
   // Initialize form for adding a new product
   const initializeAddForm = () => {
@@ -253,7 +277,7 @@ const handleSearch = (searchData) => {
   };
   
   // Add new product
-  const handleAddProduct = (e) => {
+  const handleAddProduct = async (e) => {
     e.preventDefault();
     
     if (!validateProductForm()) {
@@ -262,20 +286,22 @@ const handleSearch = (searchData) => {
     
     setIsSubmitting(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      const newProduct = {
-        ...productForm,
-        id: Date.now(),
-        price: parseFloat(productForm.price),
-        costPrice: parseFloat(productForm.costPrice || 0),
-        quantity: parseInt(productForm.quantity),
-        minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
-      };
+    const newProduct = {
+      name: productForm.name,
+      sku: productForm.sku,
+      price: parseFloat(productForm.price),
+      costPrice: parseFloat(productForm.costPrice || 0),
+      quantity: parseInt(productForm.quantity),
+      category: productForm.category,
+      description: productForm.description,
+      minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
+    };
+    
+    try {
+      const response = await api.post('/products', newProduct);
       
-      // Update products
-      const updatedProducts = [...products, newProduct];
-      setProducts(updatedProducts);
+      // Update products with the response from server
+      setProducts([...products, response.data]);
       
       // Apply current filters to new products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
@@ -283,17 +309,21 @@ const handleSearch = (searchData) => {
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(updatedProducts);
+        setFilteredProducts([...filteredProducts, response.data]);
       }
       
       setShowAddModal(false);
-      setIsSubmitting(false);
       success('Product added successfully!');
-    }, 500);
+    } catch (err) {
+      showError(err.response?.data?.msg || 'Failed to add product. Please try again.');
+      console.error('Add product error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   // Edit existing product
-  const handleEditProduct = (e) => {
+  const handleEditProduct = async (e) => {
     e.preventDefault();
     
     if (!validateProductForm()) {
@@ -302,103 +332,106 @@ const handleSearch = (searchData) => {
     
     setIsSubmitting(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      const updatedProducts = products.map(product => 
-        product.id === currentProduct.id
-          ? {
-              ...product,
-              name: productForm.name,
-              sku: productForm.sku,
-              price: parseFloat(productForm.price),
-              costPrice: parseFloat(productForm.costPrice),
-              quantity: parseInt(productForm.quantity),
-              category: productForm.category,
-              description: productForm.description,
-              minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : product.minStockLevel
-            }
-          : product
-      );
+    const updatedProduct = {
+      name: productForm.name,
+      sku: productForm.sku,
+      price: parseFloat(productForm.price),
+      costPrice: parseFloat(productForm.costPrice || 0),
+      quantity: parseInt(productForm.quantity),
+      category: productForm.category,
+      description: productForm.description,
+      minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : currentProduct.minStockLevel
+    };
+    
+    try {
+      const response = await api.put(`/products/${currentProduct._id}`, updatedProduct);
       
-      // Update products
-      setProducts(updatedProducts);
+      // Update products with the response from server
+      setProducts(products.map(product => 
+        product._id === currentProduct._id ? response.data : product
+      ));
       
-      // Apply current filters to new products list
+      // Apply current filters to updated products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(updatedProducts);
+        setFilteredProducts(filteredProducts.map(product => 
+          product._id === currentProduct._id ? response.data : product
+        ));
       }
       
       setShowEditModal(false);
-      setIsSubmitting(false);
       setCurrentProduct(null);
       success('Product updated successfully!');
-    }, 500);
+    } catch (err) {
+      showError(err.response?.data?.msg || 'Failed to update product. Please try again.');
+      console.error('Update product error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   // Delete product
-  const handleDeleteProduct = () => {
+  const handleDeleteProduct = async () => {
     setIsLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      const updatedProducts = products.filter(product => product.id !== currentProduct.id);
+    try {
+      await api.delete(`/products/${currentProduct._id}`);
       
       // Update products
+      const updatedProducts = products.filter(product => product._id !== currentProduct._id);
       setProducts(updatedProducts);
       
-      // Apply current filters to new products list
+      // Apply current filters to updated products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(updatedProducts);
+        setFilteredProducts(filteredProducts.filter(product => product._id !== currentProduct._id));
       }
       
       setShowDeleteModal(false);
-      setIsLoading(false);
       setCurrentProduct(null);
       success('Product deleted successfully!');
-    }, 500);
+    } catch (err) {
+      showError(err.response?.data?.msg || 'Failed to delete product. Please try again.');
+      console.error('Delete product error:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   // Update product stock quantity
-  const handleUpdateStock = (productId, adjustmentAmount) => {
+  const handleUpdateStock = async (productId, adjustmentAmount) => {
     if (!adjustmentAmount) return;
     
-    const updatedProducts = products.map(product => {
-      if (product.id === productId) {
-        const newQuantity = product.quantity + adjustmentAmount;
-        if (newQuantity < 0) {
-          showError('Cannot reduce stock below zero');
-          return product;
-        }
-        return { ...product, quantity: newQuantity };
+    try {
+      const response = await api.put(`/products/stock/${productId}`, { adjustment: adjustmentAmount });
+      
+      // Update products with the response from server
+      setProducts(products.map(product => 
+        product._id === productId ? response.data : product
+      ));
+      
+      // Apply current filters to updated products list
+      if (searchQuery || Object.keys(searchFilters).length > 0) {
+        // Re-apply current search
+        handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
+      } else {
+        // If no active filters, update filtered products directly
+        setFilteredProducts(filteredProducts.map(product => 
+          product._id === productId ? response.data : product
+        ));
       }
-      return product;
-    });
-    
-    // Update products
-    setProducts(updatedProducts);
-    
-    // Apply current filters to updated products list
-    if (searchQuery || Object.keys(searchFilters).length > 0) {
-      // Re-apply current search
-      handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
-    } else {
-      // If no active filters, update filtered products directly
-      setFilteredProducts(
-        filteredProducts.map(product => 
-          updatedProducts.find(p => p.id === product.id) || product
-        )
-      );
+      
+      success(`Stock updated successfully! Adjustment: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount}`);
+    } catch (err) {
+      showError(err.response?.data?.msg || 'Failed to update stock. Please try again.');
+      console.error('Update stock error:', err);
     }
-    
-    success(`Stock updated successfully! Adjustment: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount}`);
   };
   
   // Handle export data
@@ -500,8 +533,7 @@ const handleSearch = (searchData) => {
   ];
   
   return (
-    
-     <div className="min-h-screen flex flex-col lg:flex-row">
+    <div className="min-h-screen flex flex-col lg:flex-row">
       <Sidebar 
         isAdmin={isAdmin} 
         activePage="inventory" 
@@ -574,11 +606,27 @@ const handleSearch = (searchData) => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredProducts.map(product => (
                 <InventoryItem 
-                  key={product.id}
-                  item={product}
+                  key={product._id}
+                  item={{
+                    id: product._id, // Use _id from MongoDB
+                    name: product.name,
+                    sku: product.sku,
+                    price: product.price,
+                    costPrice: product.costPrice,
+                    quantity: product.quantity,
+                    category: product.category,
+                    description: product.description,
+                    minStockLevel: product.minStockLevel
+                  }}
                   isAdmin={isAdmin}
-                  onEdit={() => initializeEditForm(product)}
-                  onDelete={() => handleShowDeleteModal(product)}
+                  onEdit={() => initializeEditForm({
+                    ...product,
+                    id: product._id // Ensure id is available for the form
+                  })}
+                  onDelete={() => handleShowDeleteModal({
+                    ...product,
+                    id: product._id // Ensure id is available for deletion
+                  })}
                   onUpdateStock={handleUpdateStock}
                 />
               ))}

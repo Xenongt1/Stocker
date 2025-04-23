@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LoginPage from './pages/LoginPage';
 import UserDashboard from './pages/UserDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -11,37 +11,58 @@ import AccessDenied from './pages/AccessDenied';
 import {FullPageLoader} from './components/LoadingState';
 import { NotificationProvider } from './components/NotificationSystem';
 import { AppSettingsProvider } from './context/AppSettingsContext';
+import { authService } from './services/api';
 
 function App() {
   const [page, setPage] = useState('login');
-  const [userRole, setUserRole] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [profileImage, setProfileImage] = useState(null);
   
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (authService.isLoggedIn()) {
+        try {
+          // Get current user data
+          const userData = await authService.getCurrentUser();
+          setUser(userData);
+          
+          // Navigate to appropriate dashboard
+          setPage(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard');
+        } catch (err) {
+          // If token is invalid, clear it
+          authService.logout();
+        }
+      }
+      
+      setIsLoading(false);
+    };
+    
+    checkAuth();
+  }, []);
+  
   // Login handler
-  const handleLogin = (role) => {
+  const handleLogin = (userData) => {
     setIsLoading(true);
     
-    // Simulate API authentication delay
-    setTimeout(() => {
-      setUserRole(role);
-      setPage(role === 'admin' ? 'adminDashboard' : 'userDashboard');
-      setIsLoading(false);
-    }, 1000);
+    setUser(userData);
+    setPage(userData.role === 'admin' ? 'adminDashboard' : 'userDashboard');
+    setIsLoading(false);
   };
   
   // Logout handler
   const handleLogout = () => {
     setIsLoading(true);
     
-    // Simulate logout delay
-    setTimeout(() => {
-      setUserRole(null);
-      setPage('login');
-      setIsLoading(false);
-      // Reset profile image on logout
-      setProfileImage(null);
-    }, 500);
+    // Clear auth data
+    authService.logout();
+    
+    setUser(null);
+    setPage('login');
+    setIsLoading(false);
+    // Reset profile image on logout
+    setProfileImage(null);
   };
   
   // Page navigation handler
@@ -70,43 +91,46 @@ function App() {
     const commonProps = {
       onNavigate: handleNavigate, 
       onLogout: handleLogout,
-      profileImage: profileImage
+      profileImage: profileImage,
+      user: user
     };
+    
+    if (isLoading) {
+      return <FullPageLoader />;
+    }
     
     switch(page) {
       case 'login':
-        return <LoginPage onLogin={handleLogin} />;
+        return <LoginPage onLoginSuccess={handleLogin} />;
       case 'userDashboard':
         return <UserDashboard {...commonProps} />;
       case 'adminDashboard':
         return <AdminDashboard {...commonProps} />;
       case 'inventory':
-        return <InventoryPage isAdmin={userRole === 'admin'} {...commonProps} />;
+        return <InventoryPage isAdmin={user?.role === 'admin'} {...commonProps} />;
       case 'sales':
-        return <SalesPage isAdmin={userRole === 'admin'} {...commonProps} />;
+        return <SalesPage isAdmin={user?.role === 'admin'} {...commonProps} />;
       case 'reports':
-        return <ReportsPage isAdmin={userRole === 'admin'} {...commonProps} />;
+        return <ReportsPage isAdmin={user?.role === 'admin'} {...commonProps} />;
       case 'users':
-        return userRole === 'admin' ? 
+        return user?.role === 'admin' ? 
           <UserManagementPage {...commonProps} /> : 
-          <AccessDenied onBack={() => handleNavigate(userRole === 'admin' ? 'adminDashboard' : 'userDashboard')} />;
+          <AccessDenied onBack={() => handleNavigate(user?.role === 'admin' ? 'adminDashboard' : 'userDashboard')} />;
       case 'settings':
         return <SettingsPage 
-          isAdmin={userRole === 'admin'} 
+          isAdmin={user?.role === 'admin'} 
           {...commonProps}
           onProfileUpdate={handleProfileUpdate}
         />;
       default:
-        return <LoginPage onLogin={handleLogin} />;
+        return <LoginPage onLoginSuccess={handleLogin} />;
     }
   };
   
   return (
-    
     <AppSettingsProvider>
       <NotificationProvider>
         <div className="bg-gray-100 min-h-screen">
-          {isLoading && <FullPageLoader />}
           {renderPage()}
         </div>
       </NotificationProvider>

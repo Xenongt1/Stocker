@@ -8,11 +8,17 @@ import {
   Settings, 
   LogOut,
   Menu,
-  X,
-  Camera
+  X
 } from './Icons';
 
-const Sidebar = ({ isAdmin, activePage, onNavigate, onLogout, profileImage }) => {
+const Sidebar = ({ 
+  isAdmin, 
+  activePage, 
+  onNavigate, 
+  onLogout, 
+  profileImage,
+  username
+}) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState({
     lowStock: 3,
@@ -42,6 +48,11 @@ const Sidebar = ({ isAdmin, activePage, onNavigate, onLogout, profileImage }) =>
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Get the display username or fallback to role
+  const displayUsername = username || (isAdmin ? 'Admin' : 'User');
+  // Get first letter for avatar
+  const userInitial = displayUsername ? displayUsername.charAt(0).toUpperCase() : (isAdmin ? 'A' : 'U');
+  
   return (
     <>
       {/* Mobile menu button - visible only on small screens */}
@@ -82,11 +93,11 @@ const Sidebar = ({ isAdmin, activePage, onNavigate, onLogout, profileImage }) =>
               </div>
             ) : (
               <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-                <span className="font-bold">{isAdmin ? 'A' : 'U'}</span>
+                <span className="font-bold">{userInitial}</span>
               </div>
             )}
             <div>
-              <p className="font-bold">{isAdmin ? 'Admin User' : 'Store User'}</p>
+              <p className="font-bold">{displayUsername}</p>
               <p className="text-xs text-gray-400">{isAdmin ? 'Administrator' : 'Staff'}</p>
             </div>
             {/* Close button for mobile */}
@@ -171,7 +182,6 @@ const Sidebar = ({ isAdmin, activePage, onNavigate, onLogout, profileImage }) =>
                   <span>Settings</span>
                 </button>
               </li>
-              
             </ul>
           </nav>
           

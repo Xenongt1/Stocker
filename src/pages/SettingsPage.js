@@ -1,33 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import Modal from '../components/Modal';
 import ProfilePicture from '../components/ProfilePicture';
 import { useAppSettings } from '../context/AppSettingsContext';
+import { useNotification } from '../components/NotificationSystem';
+import { LoadingButton } from '../components/LoadingState';
+import { validateEmail, validatePassword, validateConfirmPassword } from '../utils/validation';
 
 // Settings Page Component
-const SettingsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
-  const [username, setUsername] = useState(isAdmin ? 'admin' : 'user');
-const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example.com');
-
+const SettingsPage = ({ 
+  isAdmin, 
+  onNavigate, 
+  onLogout, 
+  profileImage, 
+  username,
+  onProfileUpdate, 
+  onUserInfoUpdate, 
+  onPasswordUpdate,
+  userInfo 
+}) => {
   const { settings, updateSettings } = useAppSettings();
+  const { success, error: showError } = useNotification();
   
+  // State for user profile information
+  const [userProfile, setUserProfile] = useState({
+    username: username || (isAdmin ? 'admin' : 'user'),
+    email: userInfo?.email || (isAdmin ? 'admin@example.com' : 'user@example.com'),
+    role: isAdmin ? 'admin' : 'user'
+  });
+  
+  // State for general settings
   const [generalSettings, setGeneralSettings] = useState({
     storeName: settings.storeName,
     currency: settings.currency,
     taxRate: String(settings.taxRate),
     lowStockThreshold: String(settings.lowStockThreshold),
     receiptFooter: settings.receiptFooter,
-    
   });
   
+  // State for password change
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  
+  // Validation errors
+  const [errors, setErrors] = useState({});
+  
+  // UI state
   const [activeTab, setActiveTab] = useState('general');
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Update user profile from props when component mounts or isAdmin changes
+  useEffect(() => {
+    if (userInfo) {
+      setUserProfile({
+        username: userInfo.username || (isAdmin ? 'admin' : 'user'),
+        email: userInfo.email || (isAdmin ? 'admin@example.com' : 'user@example.com'),
+        role: isAdmin ? 'admin' : 'user'
+      });
+    }
+  }, [isAdmin, userInfo]);
   
   // For regular users, we'll only show account tab with limited options
   // If user is not admin and tries to access other tabs, redirect to account tab
-  if (!isAdmin && activeTab !== 'account') {
-    setActiveTab('account');
-  }
+  useEffect(() => {
+    if (!isAdmin && activeTab !== 'account') {
+      setActiveTab('account');
+    }
+  }, [isAdmin, activeTab]);
   
   const handleProfileImageChange = (newImage) => {
     // Call the parent handler to update the profile image in App.js
@@ -42,7 +85,93 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
     }
   };
   
-  const handleSaveSettings = () => {
+  // Handle changes to user profile information
+  const handleUserProfileChange = (e) => {
+    const { name, value } = e.target;
+    setUserProfile(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear validation error when field is changed
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
+    }
+  };
+  
+  // Handle changes to general settings
+  const handleGeneralSettingsChange = (e) => {
+    const { name, value } = e.target;
+    setGeneralSettings(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  
+  // Handle changes to password fields
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear validation error when field is changed
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
+    }
+  };
+  
+  // Validate user profile form
+  const validateUserProfile = () => {
+    const newErrors = {};
+    
+    if (!userProfile.username) {
+      newErrors.username = 'Username is required';
+    }
+    
+    const emailError = validateEmail(userProfile.email);
+    if (emailError) {
+      newErrors.email = emailError;
+    }
+    
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    return Object.keys(newErrors).length === 0;
+  };
+  
+  // Validate password change form
+  const validatePasswordChange = () => {
+    const newErrors = {};
+    
+    if (!passwordData.currentPassword) {
+      newErrors.currentPassword = 'Current password is required';
+    }
+    
+    const passwordError = validatePassword(passwordData.newPassword);
+    if (passwordError) {
+      newErrors.newPassword = passwordError;
+    }
+    
+    const confirmError = validateConfirmPassword(
+      passwordData.newPassword, 
+      passwordData.confirmPassword
+    );
+    if (confirmError) {
+      newErrors.confirmPassword = confirmError;
+    }
+    
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    return Object.keys(newErrors).length === 0;
+  };
+  
+  // Save general settings
+  const handleSaveGeneralSettings = () => {
     // Update the context with new settings
     updateSettings({
       storeName: generalSettings.storeName,
@@ -53,10 +182,69 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
     });
     
     // Show success message
-    setUpdateSuccess(true);
+    success('General settings updated successfully!');
+  };
+  
+  // Save user profile
+  const handleSaveUserProfile = () => {
+    if (!validateUserProfile()) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    // Simulate API call
     setTimeout(() => {
-      setUpdateSuccess(false);
-    }, 3000);
+      // Call the parent handler to update user info in App.js
+      if (onUserInfoUpdate) {
+        onUserInfoUpdate({
+          username: userProfile.username,
+          email: userProfile.email
+        });
+      }
+      
+      setIsSubmitting(false);
+      success('Profile updated successfully!');
+    }, 800);
+  };
+  
+  // Change password
+  const handleChangePassword = () => {
+    if (!validatePasswordChange()) {
+      return;
+    }
+    
+    // For demo purposes, we'll check if current password matches expected value
+    // Get expected password from userInfo or fallback to default
+    const expectedPassword = userInfo?.password || (isAdmin ? 'admin123' : 'user123');
+    
+    if (passwordData.currentPassword !== expectedPassword) {
+      setErrors(prev => ({
+        ...prev,
+        currentPassword: 'Current password is incorrect'
+      }));
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    // Simulate API call
+    setTimeout(() => {
+      // Call the parent handler to update password in App.js
+      if (onPasswordUpdate) {
+        onPasswordUpdate(passwordData.newPassword);
+      }
+      
+      // Reset password fields
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      
+      setIsSubmitting(false);
+      success('Password changed successfully!');
+    }, 800);
   };
   
   return (
@@ -67,6 +255,7 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
         onNavigate={onNavigate} 
         onLogout={onLogout}
         profileImage={profileImage}
+        username={userProfile.username}
       />
       
       <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
@@ -130,17 +319,19 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                     <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
                     <input 
                       type="text" 
+                      name="storeName"
                       className="w-full p-2 border rounded" 
                       value={generalSettings.storeName}
-                      onChange={(e) => setGeneralSettings({...generalSettings, storeName: e.target.value})}
+                      onChange={handleGeneralSettingsChange}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
                      <select 
+                      name="currency"
                       className="w-full p-2 border rounded"
                       value={generalSettings.currency}
-                      onChange={(e) => setGeneralSettings({...generalSettings, currency: e.target.value})}
+                      onChange={handleGeneralSettingsChange}
                     >
                       <option value="USD">USD ($)</option>
                       <option value="EUR">EUR (€)</option>
@@ -154,27 +345,30 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
                     <input 
                       type="number" 
+                      name="taxRate"
                       className="w-full p-2 border rounded" 
                       value={generalSettings.taxRate}
-                      onChange={(e) => setGeneralSettings({...generalSettings, taxRate: e.target.value})}
+                      onChange={handleGeneralSettingsChange}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Threshold</label>
                     <input 
                       type="number" 
+                      name="lowStockThreshold"
                       className="w-full p-2 border rounded" 
                       value={generalSettings.lowStockThreshold}
-                      onChange={(e) => setGeneralSettings({...generalSettings, lowStockThreshold: e.target.value})}
+                      onChange={handleGeneralSettingsChange}
                     />
                   </div>
                   <div className="col-span-1 sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Footer</label>
                     <textarea 
+                      name="receiptFooter"
                       className="w-full p-2 border rounded" 
                       rows="2"
                       value={generalSettings.receiptFooter}
-                      onChange={(e) => setGeneralSettings({...generalSettings, receiptFooter: e.target.value})}
+                      onChange={handleGeneralSettingsChange}
                     ></textarea>
                   </div>
                 </div>
@@ -182,7 +376,7 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                 <div className="flex justify-end">
                   <button 
                     className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                    onClick={handleSaveSettings}
+                    onClick={handleSaveGeneralSettings}
                   >
                     Save Changes
                   </button>
@@ -197,75 +391,114 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                 <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
                   <ProfilePicture 
                     initialImage={profileImage}
-                    userName={isAdmin ? 'Admin' : 'User'}
+                    userName={userProfile.username}
                     isAdmin={isAdmin}
                     onImageChange={handleProfileImageChange}
                   />
                   <div>
-                    <h4 className="font-bold text-lg">{isAdmin ? 'Admin User' : 'Store User'}</h4>
-                    <p className="text-gray-600">{isAdmin ? 'admin@example.com' : 'user@example.com'}</p>
+                    <h4 className="font-bold text-lg">{userProfile.username}</h4>
+                    <p className="text-gray-600">{userProfile.email}</p>
+                    <p className="text-xs text-gray-500 mt-1">Role: {userProfile.role}</p>
                   </div>
                 </div>
                 
-                {/* For regular users, only show username and password fields */}
+                <h4 className="font-medium mb-2">Profile Information</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
                     <input 
                       type="text" 
-                      className="w-full p-2 border rounded" 
-                      value={generalSettings.storeName}
-                      onChange={(e) => setGeneralSettings({...generalSettings, storeName: e.target.value})}
+                      name="username"
+                      className={`w-full p-2 border rounded ${errors.username ? 'border-red-500' : 'border-gray-300'}`}
+                      value={userProfile.username}
+                      onChange={handleUserProfileChange}
                     />
-
-
+                    {errors.username && (
+                      <p className="text-red-500 text-xs mt-1">{errors.username}</p>
+                    )}
                   </div>
                   
-                  {/* Only show email field for admins */}
-                  {isAdmin && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                      <input 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input 
                       type="email" 
-                      className="w-full p-2 border rounded" 
-                      value={email}
-                      onChange={(e) => setGeneralSettings({ ...generalSettings, email: e.target.value })}
+                      name="email"
+                      className={`w-full p-2 border rounded ${errors.email ? 'border-red-500' : 'border-gray-300'}`}
+                      value={userProfile.email}
+                      onChange={handleUserProfileChange}
                     />
-                    </div>
-                  )}
+                    {errors.email && (
+                      <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+                    )}
+                  </div>
                 </div>
                 
-                <h4 className="font-medium mt-6 mb-2">Change Password</h4>
+                <div className="flex justify-end mt-4">
+                  <LoadingButton
+                    isLoading={isSubmitting}
+                    loadingText="Updating..."
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleSaveUserProfile}
+                  >
+                    Update Profile
+                  </LoadingButton>
+                </div>
+                
+                <hr className="my-6" />
+                
+                <h4 className="font-medium mb-2">Change Password</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
                     <input 
                       type="password" 
-                      className="w-full p-2 border rounded" 
+                      name="currentPassword"
+                      className={`w-full p-2 border rounded ${errors.currentPassword ? 'border-red-500' : 'border-gray-300'}`}
+                      value={passwordData.currentPassword}
+                      onChange={handlePasswordChange}
                     />
+                    {errors.currentPassword && (
+                      <p className="text-red-500 text-xs mt-1">{errors.currentPassword}</p>
+                    )}
                   </div>
                   <div className="sm:col-span-2 lg:col-span-1"></div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
                     <input 
                       type="password" 
-                      className="w-full p-2 border rounded" 
+                      name="newPassword"
+                      className={`w-full p-2 border rounded ${errors.newPassword ? 'border-red-500' : 'border-gray-300'}`}
+                      value={passwordData.newPassword}
+                      onChange={handlePasswordChange}
                     />
+                    {errors.newPassword && (
+                      <p className="text-red-500 text-xs mt-1">{errors.newPassword}</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
                     <input 
                       type="password" 
-                      className="w-full p-2 border rounded" 
+                      name="confirmPassword"
+                      className={`w-full p-2 border rounded ${errors.confirmPassword ? 'border-red-500' : 'border-gray-300'}`}
+                      value={passwordData.confirmPassword}
+                      onChange={handlePasswordChange}
                     />
+                    {errors.confirmPassword && (
+                      <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
+                    )}
                   </div>
                 </div>
                 
-                <div className="flex justify-end">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"  
-                    onClick={handleSaveSettings}>
-                    Update Account
-                  </button>
+                <div className="flex justify-end mt-4">
+                  <LoadingButton
+                    isLoading={isSubmitting}
+                    loadingText="Updating..."
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleChangePassword}
+                  >
+                    Change Password
+                  </LoadingButton>
                 </div>
               </div>
             )}
@@ -343,6 +576,78 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                     </thead>
                     <tbody>
                       <tr className="border-b">
+                        <td className="py-2">View Dashboard</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">Manage Inventory</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">Process Sales</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">View Reports</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">Edit Product Prices</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">Apply Discounts : 20%</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">View Profit Reports</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
+                        <td className="py-2">Manage Users</td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                        <td className="py-2 text-center">
+                          <input type="checkbox" disabled className="h-4 w-4 text-blue-600" />
+                        </td>
+                      </tr>
+                      <tr className="border-b">
                         <td className="py-2">System Settings</td>
                         <td className="py-2 text-center">
                           <input type="checkbox" checked disabled className="h-4 w-4 text-blue-600" />
@@ -358,7 +663,6 @@ const [email, setEmail] = useState(isAdmin ? 'admin@example.com' : 'user@example
                 <div className="flex justify-end mt-6">
                   <button 
                     className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                    onClick={handleSaveSettings}
                   >
                     Save Permissions
                   </button>

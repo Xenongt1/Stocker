@@ -4,19 +4,20 @@ import ProductCard from '../components/ProductCard';
 import Modal from '../components/Modal';
 import ProfilePicture from '../components/ProfilePicture';
 import { useNotification } from '../components/NotificationSystem';
-import { LoadingButton } from '../components/LoadingState';
+import { LoadingButton, ComponentLoader } from '../components/LoadingState';
 import { useAppSettings } from '../context/AppSettingsContext';
 import Receipt from '../components/Receipt';
 import axios from 'axios';
 
-// Create axios instance with base URL
+// Create axios instance with base URL and better error handling
 const api = axios.create({
   baseURL: 'http://localhost:5000/api'
 });
 
-// Add a request interceptor to include the auth token with every request
+// Add request interceptor
 api.interceptors.request.use(
   (config) => {
+    console.log('Sending request to:', config.url);
     const token = localStorage.getItem('token');
     if (token) {
       config.headers['x-auth-token'] = token;
@@ -24,6 +25,19 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
+    console.error('Request error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor
+api.interceptors.response.use(
+  (response) => {
+    console.log('Response received:', response.status);
+    return response;
+  },
+  (error) => {
+    console.error('API Error Response:', error.response ? error.response.data : error.message);
     return Promise.reject(error);
   }
 );
@@ -46,6 +60,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   
+  // Past sales state
+  const [pastSales, setPastSales] = useState([]);
+  const [showPastSales, setShowPastSales] = useState(false);
+  const [isFetchingSales, setIsFetchingSales] = useState(false);
+  const [selectedSale, setSelectedSale] = useState(null);
+  
   // Use the notification context
   const notification = useNotification();
   
@@ -58,29 +78,81 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
+      console.log('Fetching products from API...');
       const response = await api.get('/products');
+      console.log('Products fetched successfully:', response.data.length, 'items');
       setProducts(response.data);
-      setIsLoading(false);
     } catch (err) {
+      console.error('Error fetching products:', err);
       notification.error(err.response?.data?.msg || 'Failed to fetch products. Please check your connection.');
+      
+      // Set empty products array as fallback
+      setProducts([]);
+    } finally {
       setIsLoading(false);
+    }
+  };
+  
+  // Fetch past sales
+  const fetchPastSales = async () => {
+    setIsFetchingSales(true);
+    try {
+      const response = await api.get('/sales');
+      console.log('Past sales fetched:', response.data);
+      setPastSales(response.data.sales);
+      setShowPastSales(true);
+    } catch (err) {
+      console.error('Error fetching sales:', err);
+      notification.error(err.response?.data?.msg || 'Failed to fetch past sales');
+      setPastSales([]);
+    } finally {
+      setIsFetchingSales(false);
+    }
+  };
+  
+  // View a specific sale receipt
+  const viewSaleReceipt = async (saleId) => {
+    try {
+      const response = await api.get(`/sales/${saleId}`);
+      const sale = response.data;
+      
+      const receiptData = {
+        id: sale.saleNumber || sale._id,
+        items: sale.items.map(item => ({
+          id: item.product,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity
+        })),
+        discount: sale.discount,
+        tax: sale.tax,
+        subtotal: sale.subtotal,
+        total: sale.total,
+        paymentMethod: sale.paymentMethod,
+        date: new Date(sale.date),
+        cashier: sale.userName || (sale.userRole === 'admin' ? 'Admin' : 'User')
+      };
+      
+      setReceiptData(receiptData);
+      setShowReceipt(true);
+      setShowPastSales(false);
+    } catch (err) {
+      console.error('Error fetching sale details:', err);
+      notification.error('Failed to fetch receipt details');
     }
   };
   
   // Calculate totals
   const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-  const taxRate = 0.075; // 7.5% tax rate
+  const taxRate = settings.taxRate ? settings.taxRate / 100 : 0.075; // Use settings or default to 7.5%
   const taxAmount = (subtotal - discount) * taxRate;
   const total = subtotal - discount + taxAmount;
   
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
   const handleProfileImageChange = (newImage) => {
-    // Call the parent handler to update the profile image in App.js
     if (onProfileUpdate) {
       onProfileUpdate(newImage);
-      
-      // Show success message briefly
       setUpdateSuccess(true);
       setTimeout(() => {
         setUpdateSuccess(false);
@@ -89,8 +161,6 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   };
   
   const handleSaveSettings = () => {
-    // In a real application, you would save these settings to a database
-    // For now, just show a success message
     setUpdateSuccess(true);
     setTimeout(() => {
       setUpdateSuccess(false);
@@ -162,6 +232,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       notification.warning("Users can only apply discounts up to $20. Please contact an admin for higher discounts.");
       setDiscount(20);
     }
+    
+    if (discount > subtotal) {
+      notification.warning("Discount cannot exceed subtotal amount.");
+      setDiscount(subtotal);
+    }
+    
     setDiscountApplied(true);
   };
   
@@ -181,6 +257,8 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
     setIsProcessingSale(true);
     
     try {
+      console.log('Starting sale completion process...');
+      
       // Format sale data for the API
       const saleData = {
         items: cart.map(item => ({
@@ -197,12 +275,18 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
         paymentMethod: paymentMethod
       };
       
-      // Send to the API
-      const response = await api.post('/sales', saleData);
+      console.log('Attempting to send sale data to API:', JSON.stringify(saleData));
+      
+      // Send to the API with explicit timeout
+      const response = await api.post('/sales', saleData, { 
+        timeout: 10000  // 10 second timeout
+      });
+      
+      console.log('Sale completed successfully, server response:', response.data);
       
       // Create receipt data object for display
       const receiptData = {
-        id: response.data._id || `SALE-${Date.now().toString().slice(-6)}`,
+        id: response.data.saleNumber || response.data._id || 'SALE-' + Date.now(),
         items: cart.map(item => ({
           id: item.id,
           name: item.name,
@@ -224,8 +308,22 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       
       // Refresh products to get updated stock
       fetchProducts();
+      
+      // Clear cart
+      setCart([]);
+      setDiscount(0);
+      setDiscountApplied(false);
     } catch (err) {
-      notification.error(err.response?.data?.msg || 'Failed to complete sale');
+      console.error('Error completing sale:', err);
+      let errorMessage = 'Failed to complete sale';
+      
+      if (err.response && err.response.data && err.response.data.msg) {
+        errorMessage = err.response.data.msg;
+      } else if (err.message) {
+        errorMessage = `Error: ${err.message}`;
+      }
+      
+      notification.error(errorMessage);
     } finally {
       setIsProcessingSale(false);
     }
@@ -234,16 +332,24 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   // Close the receipt and reset the sale
   const handleReceiptClose = () => {
     setShowReceipt(false);
-    // Clear cart and reset after receipt is closed
-    setCart([]);
-    setDiscount(0);
-    setDiscountApplied(false);
+    
+    // Only clear cart if it wasn't a past sale being viewed
+    if (!selectedSale) {
+      // Clear cart and reset after receipt is closed
+      setCart([]);
+      setDiscount(0);
+      setDiscountApplied(false);
+    }
+    
+    setSelectedSale(null);
   };
   
   // Filter products based on search term
   const filteredProducts = searchTerm 
     ? products.filter(product => 
-        product.name.toLowerCase().includes(searchTerm.toLowerCase())
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.category.toLowerCase().includes(searchTerm.toLowerCase())
       )
     : products;
   
@@ -258,7 +364,15 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       />
       
       <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
-        <h2 className="text-xl sm:text-2xl font-bold mb-4">Sales Terminal</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl sm:text-2xl font-bold">Sales Terminal</h2>
+          <button
+            onClick={fetchPastSales}
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm"
+          >
+            View Sales History
+          </button>
+        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Product search and results */}
@@ -278,18 +392,27 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
               </div>
               
               {isLoading ? (
-                <p className="text-center py-4">Loading products...</p>
+                <div className="flex justify-center py-8">
+                  <ComponentLoader size="medium" text="Loading products..." />
+                </div>
               ) : filteredProducts.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {filteredProducts.map(product => (
                     <div key={product._id} className="border rounded p-3 flex justify-between items-center">
                       <div>
                         <h4 className="font-semibold">{product.name}</h4>
+                        <p className="text-sm text-gray-600">SKU: {product.sku}</p>
                         <p className="text-sm text-gray-600">Price: ${product.price.toFixed(2)}</p>
-                        <p className="text-sm text-gray-600">In stock: {product.quantity}</p>
+                        <p className="text-sm text-gray-600">
+                          In stock: 
+                          <span className={product.quantity <= 0 ? "text-red-600 font-bold ml-1" : 
+                                          product.quantity <= product.minStockLevel ? "text-yellow-600 font-bold ml-1" : "ml-1"}>
+                            {product.quantity}
+                          </span>
+                        </p>
                       </div>
                       <button 
-                        className={`px-3 py-1 rounded ${product.quantity > 0 ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                        className={`px-3 py-1 rounded ${product.quantity > 0 ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                         onClick={() => addToCart(product)}
                         disabled={product.quantity <= 0}
                       >
@@ -299,7 +422,17 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500 text-center py-4">No products found</p>
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No products found</p>
+                  {searchTerm && (
+                    <button 
+                      className="mt-2 text-blue-600 hover:underline"
+                      onClick={() => setSearchTerm('')}
+                    >
+                      Clear search
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             
@@ -336,7 +469,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                                 type="number" 
                                 className="w-12 h-8 border-t border-b text-center" 
                                 value={item.quantity}
-                                onChange={(e) => updateQuantity(item.id, parseInt(e.target.value))}
+                                onChange={(e) => {
+                                  const value = parseInt(e.target.value);
+                                  if (!isNaN(value)) {
+                                    updateQuantity(item.id, value);
+                                  }
+                                }}
                                 min="1"
                               />
                               <button 
@@ -350,7 +488,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                           <td className="py-2">${item.total.toFixed(2)}</td>
                           <td className="py-2">
                             <button 
-                              className="text-red-600"
+                              className="text-red-600 hover:text-red-800"
                               onClick={() => removeFromCart(item.id)}
                             >
                               Remove
@@ -391,6 +529,8 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                         setDiscount(isNaN(value) ? 0 : value);
                         setDiscountApplied(false);
                       }}
+                      min="0"
+                      max={isAdmin ? subtotal : 20}
                       disabled={discountApplied}
                     />
                     <button 
@@ -423,7 +563,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
               <div className="space-y-3">
                 {!isProcessingSale ? (
                   <button 
-                    className="w-full bg-green-600 text-white p-3 rounded font-bold"
+                    className="w-full bg-green-600 text-white p-3 rounded font-bold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     onClick={completeSale}
                     disabled={cart.length === 0}
                   >
@@ -441,7 +581,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                 )}
                 
                 <button 
-                  className="w-full border border-red-600 text-red-600 p-3 rounded font-bold"
+                  className="w-full border border-red-600 text-red-600 p-3 rounded font-bold hover:bg-red-50"
                   onClick={() => {
                     setCart([]);
                     setDiscount(0);
@@ -491,6 +631,55 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
           onClose={handleReceiptClose}
         />
       )}
+      
+      {/* Past Sales Modal */}
+      <Modal
+        isOpen={showPastSales}
+        onClose={() => setShowPastSales(false)}
+        title="Sales History"
+      >
+        {isFetchingSales ? (
+          <div className="flex justify-center py-8">
+            <ComponentLoader size="medium" text="Loading sales history..." />
+          </div>
+        ) : pastSales && pastSales.length > 0 ? (
+          <div className="max-h-96 overflow-y-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr className="text-left">
+                  <th className="p-2">Sale #</th>
+                  <th className="p-2">Date</th>
+                  <th className="p-2">Items</th>
+                  <th className="p-2">Total</th>
+                  <th className="p-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pastSales.map(sale => (
+                  <tr key={sale._id} className="border-b hover:bg-gray-50">
+                    <td className="p-2">{sale.saleNumber || sale._id.substring(0, 8)}</td>
+                    <td className="p-2">{new Date(sale.date).toLocaleDateString()}</td>
+                    <td className="p-2">{sale.items.length}</td>
+                    <td className="p-2">${sale.total.toFixed(2)}</td>
+                    <td className="p-2">
+                      <button
+                        className="text-blue-600 hover:underline"
+                        onClick={() => viewSaleReceipt(sale._id)}
+                      >
+                        View Receipt
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No sales records found</p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

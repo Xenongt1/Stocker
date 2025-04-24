@@ -15,14 +15,18 @@ import { ComponentLoader } from '../components/LoadingState';
 import ProfilePicture from '../components/ProfilePicture';
 import axios from 'axios';
 
-// Create axios instance with base URL
+// Enhanced API connection and error handling code
+// Add this to your InventoryPage.js file
+
+// Create axios instance with correct error handling
 const api = axios.create({
   baseURL: 'http://localhost:5000/api'
 });
 
-// Add a request interceptor to include the auth token with every request
+// Add request interceptor with better error logging
 api.interceptors.request.use(
   (config) => {
+    console.log('Sending request to:', config.url);
     const token = localStorage.getItem('token');
     if (token) {
       config.headers['x-auth-token'] = token;
@@ -30,9 +34,105 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
+
+// Add response interceptor for better error handling
+api.interceptors.response.use(
+  (response) => {
+    console.log('Response received:', response.status);
+    return response;
+  },
+  (error) => {
+    console.error('API Error Response:', error.response ? error.response.data : error.message);
+    return Promise.reject(error);
+  }
+);
+
+// Updated fetch products function with better error handling
+const fetchProducts = async () => {
+  setIsLoading(true);
+  try {
+    console.log('Fetching products from API...');
+    const response = await api.get('/products');
+    console.log('Products fetched successfully:', response.data.length, 'items');
+    setProducts(response.data);
+    setFilteredProducts(response.data);
+    setIsLoading(false);
+  } catch (err) {
+    console.error('Error fetching products:', err);
+    showError(err.response?.data?.msg || 'Failed to fetch products. Please check your connection to the backend server.');
+    
+    // Even if there's an error, we should stop loading
+    setIsLoading(false);
+    
+    // If the API is not available, let's show an empty products list instead of hanging on loading
+    setProducts([]);
+    setFilteredProducts([]);
+  }
+};
+
+// Enhanced add product function with better validation and error handling
+const handleAddProduct = async (e) => {
+  e.preventDefault();
+  
+  if (!validateProductForm()) {
+    showError('Please fix the form errors before submitting.');
+    return;
+  }
+  
+  setIsSubmitting(true);
+  
+  try {
+    console.log('Form data before conversion:', productForm);
+    
+    // Sanitize and convert the numeric values
+    const newProduct = {
+      name: productForm.name,
+      sku: productForm.sku,
+      price: parseFloat(productForm.price.replace(',', '.')),
+      costPrice: parseFloat((productForm.costPrice || '0').replace(',', '.')),
+      quantity: parseInt(productForm.quantity),
+      category: productForm.category,
+      description: productForm.description,
+      minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
+    };
+    
+    console.log('Sending new product to API:', newProduct);
+    
+    const response = await api.post('/products', newProduct);
+    console.log('Product added successfully, server response:', response.data);
+    
+    // Update products with the response from server
+    setProducts([...products, response.data]);
+    
+    // Apply current filters to new products list
+    if (searchQuery || Object.keys(searchFilters).length > 0) {
+      // Re-apply current search
+      handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
+    } else {
+      // If no active filters, update filtered products directly
+      setFilteredProducts([...filteredProducts, response.data]);
+    }
+    
+    setShowAddModal(false);
+    success('Product added successfully!');
+  } catch (err) {
+    console.error('Add product error:', err);
+    let errorMessage = 'Failed to add product. Please try again.';
+    
+    if (err.response) {
+      console.error('Server error details:', err.response.data);
+      errorMessage = err.response.data.msg || errorMessage;
+    }
+    
+    showError(errorMessage);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
 const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
   // STATE
@@ -215,12 +315,12 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     setProductForm({
       name: product.name,
       sku: product.sku,
-      price: product.price,
-      costPrice: product.costPrice,
-      quantity: product.quantity,
+      price: product.price.toString(),
+      costPrice: product.costPrice.toString(),
+      quantity: product.quantity.toString(),
       category: product.category,
       description: product.description || '',
-      minStockLevel: product.minStockLevel || ''
+      minStockLevel: product.minStockLevel ? product.minStockLevel.toString() : ''
     });
     setFormErrors({});
     setShowEditModal(true);
@@ -702,26 +802,24 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Selling Price"
               id="price"
               name="price"
-              type="number"
-              min="0.01"
-              step="0.01"
+              type="text" 
               value={productForm.price}
               onChange={handleInputChange}
               error={formErrors.price}
               required
+              helpText="Numbers only (e.g., 19.99)"
             />
             {isAdmin && (
               <FormInput
                 label="Cost Price"
                 id="costPrice"
                 name="costPrice"
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text" 
                 value={productForm.costPrice}
                 onChange={handleInputChange}
                 error={formErrors.costPrice}
                 required={isAdmin}
+                helpText="Numbers only (e.g., 10.99)"
               />
             )}
           </FormRow>
@@ -731,12 +829,12 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Quantity"
               id="quantity"
               name="quantity"
-              type="number"
-              min="0"
+              type="text"
               value={productForm.quantity}
               onChange={handleInputChange}
               error={formErrors.quantity}
               required
+              helpText="Whole numbers only (e.g., 100)"
             />
             <FormSelect
               label="Category"
@@ -755,12 +853,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Min Stock Level"
               id="minStockLevel"
               name="minStockLevel"
-              type="number"
-              min="0"
+              type="text"
               value={productForm.minStockLevel}
               onChange={handleInputChange}
               error={formErrors.minStockLevel}
-              helpText="Alert threshold for low stock"
+              helpText="Whole numbers only (e.g., 10)"
             />
           </FormRow>
           
@@ -815,26 +912,24 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Selling Price"
               id="edit-price"
               name="price"
-              type="number"
-              min="0.01"
-              step="0.01"
+              type="text"
               value={productForm.price}
               onChange={handleInputChange}
               error={formErrors.price}
               required
+              helpText="Numbers only (e.g., 19.99)"
             />
             {isAdmin && (
               <FormInput
                 label="Cost Price"
                 id="edit-costPrice"
                 name="costPrice"
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
                 value={productForm.costPrice}
                 onChange={handleInputChange}
                 error={formErrors.costPrice}
                 required={isAdmin}
+                helpText="Numbers only (e.g., 10.99)"
               />
             )}
           </FormRow>
@@ -844,12 +939,12 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Quantity"
               id="edit-quantity"
               name="quantity"
-              type="number"
-              min="0"
+              type="text"
               value={productForm.quantity}
               onChange={handleInputChange}
               error={formErrors.quantity}
               required
+              helpText="Whole numbers only (e.g., 100)"
             />
             <FormSelect
               label="Category"
@@ -868,12 +963,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               label="Min Stock Level"
               id="edit-minStockLevel"
               name="minStockLevel"
-              type="number"
-              min="0"
+              type="text"
               value={productForm.minStockLevel}
               onChange={handleInputChange}
               error={formErrors.minStockLevel}
-              helpText="Alert threshold for low stock"
+              helpText="Whole numbers only (e.g., 10)"
             />
           </FormRow>
           

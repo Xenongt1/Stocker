@@ -21,6 +21,7 @@ export const FormInput = ({
   const inputProps = {
     id,
     type,
+    name: id,
     value,
     onChange,
     onBlur,
@@ -79,6 +80,7 @@ export const FormTextarea = ({
       )}
       <textarea
         id={id}
+        name={id}
         value={value}
         onChange={onChange}
         onBlur={onBlur}
@@ -123,6 +125,7 @@ export const FormSelect = ({
       )}
       <select
         id={id}
+        name={id}
         value={value}
         onChange={onChange}
         onBlur={onBlur}
@@ -167,6 +170,7 @@ export const FormCheckbox = ({
       <div className="flex items-center">
         <input
           id={id}
+          name={id}
           type="checkbox"
           checked={checked}
           onChange={onChange}

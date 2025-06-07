@@ -13,126 +13,7 @@ import ConfirmationDialog from '../components/ConfirmationDialog';
 import BarcodeScanner from '../components/BarcodeScanner';
 import { ComponentLoader } from '../components/LoadingState';
 import ProfilePicture from '../components/ProfilePicture';
-import axios from 'axios';
-
-// Enhanced API connection and error handling code
-// Add this to your InventoryPage.js file
-
-// Create axios instance with correct error handling
-const api = axios.create({
-  baseURL: 'http://localhost:5000/api'
-});
-
-// Add request interceptor with better error logging
-api.interceptors.request.use(
-  (config) => {
-    console.log('Sending request to:', config.url);
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers['x-auth-token'] = token;
-    }
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor for better error handling
-api.interceptors.response.use(
-  (response) => {
-    console.log('Response received:', response.status);
-    return response;
-  },
-  (error) => {
-    console.error('API Error Response:', error.response ? error.response.data : error.message);
-    return Promise.reject(error);
-  }
-);
-
-// Updated fetch products function with better error handling
-const fetchProducts = async () => {
-  setIsLoading(true);
-  try {
-    console.log('Fetching products from API...');
-    const response = await api.get('/products');
-    console.log('Products fetched successfully:', response.data.length, 'items');
-    setProducts(response.data);
-    setFilteredProducts(response.data);
-    setIsLoading(false);
-  } catch (err) {
-    console.error('Error fetching products:', err);
-    showError(err.response?.data?.msg || 'Failed to fetch products. Please check your connection to the backend server.');
-    
-    // Even if there's an error, we should stop loading
-    setIsLoading(false);
-    
-    // If the API is not available, let's show an empty products list instead of hanging on loading
-    setProducts([]);
-    setFilteredProducts([]);
-  }
-};
-
-// Enhanced add product function with better validation and error handling
-const handleAddProduct = async (e) => {
-  e.preventDefault();
-  
-  if (!validateProductForm()) {
-    showError('Please fix the form errors before submitting.');
-    return;
-  }
-  
-  setIsSubmitting(true);
-  
-  try {
-    console.log('Form data before conversion:', productForm);
-    
-    // Sanitize and convert the numeric values
-    const newProduct = {
-      name: productForm.name,
-      sku: productForm.sku,
-      price: parseFloat(productForm.price.replace(',', '.')),
-      costPrice: parseFloat((productForm.costPrice || '0').replace(',', '.')),
-      quantity: parseInt(productForm.quantity),
-      category: productForm.category,
-      description: productForm.description,
-      minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
-    };
-    
-    console.log('Sending new product to API:', newProduct);
-    
-    const response = await api.post('/products', newProduct);
-    console.log('Product added successfully, server response:', response.data);
-    
-    // Update products with the response from server
-    setProducts([...products, response.data]);
-    
-    // Apply current filters to new products list
-    if (searchQuery || Object.keys(searchFilters).length > 0) {
-      // Re-apply current search
-      handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
-    } else {
-      // If no active filters, update filtered products directly
-      setFilteredProducts([...filteredProducts, response.data]);
-    }
-    
-    setShowAddModal(false);
-    success('Product added successfully!');
-  } catch (err) {
-    console.error('Add product error:', err);
-    let errorMessage = 'Failed to add product. Please try again.';
-    
-    if (err.response) {
-      console.error('Server error details:', err.response.data);
-      errorMessage = err.response.data.msg || errorMessage;
-    }
-    
-    showError(errorMessage);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+import { productService } from '../services/api';
 
 const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
   // STATE
@@ -169,24 +50,53 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
   const [updateSuccess, setUpdateSuccess] = useState(false);
   
   // NOTIFICATION
-  const { success, error: showError } = useNotification();
+  const { success: showSuccess, error: showError } = useNotification();
   
   // Fetch products on component mount
   useEffect(() => {
     fetchProducts();
   }, []);
   
+  // Validate product form
+  const validateProductForm = () => {
+    // Define validation rules
+    const validationRules = {
+      name: [validateRequired],
+      sku: [validateRequired, validateSKU],
+      price: [(value) => validateNumber(value, { min: 0.01 })],
+      quantity: [(value) => validateNumber(value, { min: 0, integer: true })],
+      category: [validateRequired]
+    };
+    
+    // Add cost price validation for admin
+    if (isAdmin) {
+      validationRules.costPrice = [(value) => validateNumber(value, { min: 0.01 })];
+    }
+    
+    // Add min stock level validation if provided
+    if (productForm.minStockLevel !== '') {
+      validationRules.minStockLevel = [(value) => validateNumber(value, { required: false, min: 0, integer: true })];
+    }
+    
+    // Run validation
+    const result = validateForm(productForm, validationRules);
+    setFormErrors(result.errors);
+    return result.isValid;
+  };
+  
   // Fetch products from API
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get('/products');
-      setProducts(response.data);
-      setFilteredProducts(response.data);
-      setIsLoading(false);
+      const response = await productService.getAllProducts();
+      setProducts(response);
+      setFilteredProducts(response);
     } catch (err) {
       console.error('Error fetching products:', err);
-      showError(err.response?.data?.msg || 'Failed to fetch products. Please check your connection.');
+      showError(err.message || 'Failed to fetch products');
+      setProducts([]);
+      setFilteredProducts([]);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -349,59 +259,39 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     }
   };
   
-  // Validate product form
-  const validateProductForm = () => {
-    // Define validation rules
-    const validationRules = {
-      name: [validateRequired],
-      sku: [validateRequired, validateSKU],
-      price: [(value) => validateNumber(value, { min: 0.01 })],
-      quantity: [(value) => validateNumber(value, { min: 0, integer: true })],
-      category: [validateRequired]
-    };
-    
-    // Add cost price validation for admin
-    if (isAdmin) {
-      validationRules.costPrice = [(value) => validateNumber(value, { min: 0.01 })];
-    }
-    
-    // Add min stock level validation if provided
-    if (productForm.minStockLevel !== '') {
-      validationRules.minStockLevel = [(value) => validateNumber(value, { required: false, min: 0, integer: true })];
-    }
-    
-    // Run validation
-    const result = validateForm(productForm, validationRules);
-    setFormErrors(result.errors);
-    return result.isValid;
-  };
-  
-  // Add new product
+  // Enhanced add product function with better validation and error handling
   const handleAddProduct = async (e) => {
     e.preventDefault();
     
     if (!validateProductForm()) {
+      showError('Please fix the form errors before submitting.');
       return;
     }
     
     setIsSubmitting(true);
     
-    const newProduct = {
-      name: productForm.name,
-      sku: productForm.sku,
-      price: parseFloat(productForm.price),
-      costPrice: parseFloat(productForm.costPrice || 0),
-      quantity: parseInt(productForm.quantity),
-      category: productForm.category,
-      description: productForm.description,
-      minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
-    };
-    
     try {
-      const response = await api.post('/products', newProduct);
+      console.log('Form data before conversion:', productForm);
+      
+      // Sanitize and convert the numeric values
+      const newProduct = {
+        name: productForm.name,
+        sku: productForm.sku,
+        price: parseFloat(productForm.price.replace(',', '.')),
+        costPrice: parseFloat((productForm.costPrice || '0').replace(',', '.')),
+        quantity: parseInt(productForm.quantity),
+        category: productForm.category,
+        description: productForm.description,
+        minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
+      };
+      
+      console.log('Sending new product to API:', newProduct);
+      
+      const response = await productService.addProduct(newProduct);
+      console.log('Product added successfully, server response:', response);
       
       // Update products with the response from server
-      setProducts([...products, response.data]);
+      setProducts([...products, response]);
       
       // Apply current filters to new products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
@@ -409,14 +299,14 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts([...filteredProducts, response.data]);
+        setFilteredProducts([...filteredProducts, response]);
       }
       
       setShowAddModal(false);
-      success('Product added successfully!');
+      showSuccess('Product added successfully!');
     } catch (err) {
-      showError(err.response?.data?.msg || 'Failed to add product. Please try again.');
       console.error('Add product error:', err);
+      showError(err.message || 'Failed to add product. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -444,11 +334,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     };
     
     try {
-      const response = await api.put(`/products/${currentProduct._id}`, updatedProduct);
+      const response = await productService.updateProduct(currentProduct.id, updatedProduct);
       
       // Update products with the response from server
       setProducts(products.map(product => 
-        product._id === currentProduct._id ? response.data : product
+        product.id === currentProduct.id ? response : product
       ));
       
       // Apply current filters to updated products list
@@ -458,15 +348,15 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       } else {
         // If no active filters, update filtered products directly
         setFilteredProducts(filteredProducts.map(product => 
-          product._id === currentProduct._id ? response.data : product
+          product.id === currentProduct.id ? response : product
         ));
       }
       
       setShowEditModal(false);
       setCurrentProduct(null);
-      success('Product updated successfully!');
+      showSuccess('Product updated successfully!');
     } catch (err) {
-      showError(err.response?.data?.msg || 'Failed to update product. Please try again.');
+      showError(err.message || 'Failed to update product. Please try again.');
       console.error('Update product error:', err);
     } finally {
       setIsSubmitting(false);
@@ -478,10 +368,10 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     setIsLoading(true);
     
     try {
-      await api.delete(`/products/${currentProduct._id}`);
+      await productService.deleteProduct(currentProduct.id);
       
       // Update products
-      const updatedProducts = products.filter(product => product._id !== currentProduct._id);
+      const updatedProducts = products.filter(product => product.id !== currentProduct.id);
       setProducts(updatedProducts);
       
       // Apply current filters to updated products list
@@ -490,14 +380,14 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(filteredProducts.filter(product => product._id !== currentProduct._id));
+        setFilteredProducts(filteredProducts.filter(product => product.id !== currentProduct.id));
       }
       
       setShowDeleteModal(false);
       setCurrentProduct(null);
-      success('Product deleted successfully!');
+      showSuccess('Product deleted successfully!');
     } catch (err) {
-      showError(err.response?.data?.msg || 'Failed to delete product. Please try again.');
+      showError(err.message || 'Failed to delete product. Please try again.');
       console.error('Delete product error:', err);
     } finally {
       setIsLoading(false);
@@ -509,11 +399,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     if (!adjustmentAmount) return;
     
     try {
-      const response = await api.put(`/products/stock/${productId}`, { adjustment: adjustmentAmount });
+      const response = await productService.updateStock(productId, { adjustment: adjustmentAmount });
       
       // Update products with the response from server
       setProducts(products.map(product => 
-        product._id === productId ? response.data : product
+        product.id === productId ? response : product
       ));
       
       // Apply current filters to updated products list
@@ -523,13 +413,13 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       } else {
         // If no active filters, update filtered products directly
         setFilteredProducts(filteredProducts.map(product => 
-          product._id === productId ? response.data : product
+          product.id === productId ? response : product
         ));
       }
       
-      success(`Stock updated successfully! Adjustment: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount}`);
+      showSuccess(`Stock updated successfully! Adjustment: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount}`);
     } catch (err) {
-      showError(err.response?.data?.msg || 'Failed to update stock. Please try again.');
+      showError(err.message || 'Failed to update stock. Please try again.');
       console.error('Update stock error:', err);
     }
   };
@@ -538,7 +428,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
   const handleExportData = () => {
     try {
       exportAsCSV(filteredProducts, 'inventory.csv');
-      success('Inventory data exported successfully!');
+      showSuccess('Inventory data exported successfully!');
     } catch (err) {
       showError('Failed to export data. Please try again.');
       console.error('Export error:', err);
@@ -547,7 +437,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
   
   // Handle barcode scan
   const handleBarcodeScan = (barcode) => {
-    success(`Barcode scanned: ${barcode}`);
+    showSuccess(`Barcode scanned: ${barcode}`);
     
     // Find product by SKU (simulating barcode = SKU for this demo)
     const found = products.find(p => p.sku === barcode);
@@ -706,26 +596,26 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredProducts.map(product => (
                 <InventoryItem 
-                  key={product._id}
+                  key={product.id || product._id}
                   item={{
-                    id: product._id, // Use _id from MongoDB
+                    id: product.id || product._id,
                     name: product.name,
                     sku: product.sku,
-                    price: product.price,
-                    costPrice: product.costPrice,
-                    quantity: product.quantity,
+                    price: parseFloat(product.price),
+                    costPrice: parseFloat(product.cost_price || product.costPrice || 0),
+                    quantity: parseInt(product.quantity),
                     category: product.category,
                     description: product.description,
-                    minStockLevel: product.minStockLevel
+                    minStockLevel: parseInt(product.min_stock_level || product.minStockLevel || 5)
                   }}
                   isAdmin={isAdmin}
                   onEdit={() => initializeEditForm({
                     ...product,
-                    id: product._id // Ensure id is available for the form
+                    id: product.id || product._id
                   })}
                   onDelete={() => handleShowDeleteModal({
                     ...product,
-                    id: product._id // Ensure id is available for deletion
+                    id: product.id || product._id
                   })}
                   onUpdateStock={handleUpdateStock}
                 />

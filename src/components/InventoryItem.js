@@ -44,12 +44,12 @@ const InventoryItem = ({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div>
             <p className="text-sm text-gray-600">Price</p>
-            <p className="font-semibold">${item.price.toFixed(2)}</p>
+            <p className="font-semibold">${parseFloat(item.price || 0).toFixed(2)}</p>
           </div>
           {isAdmin && (
             <div>
               <p className="text-sm text-gray-600">Cost</p>
-              <p className="font-semibold">${item.costPrice.toFixed(2)}</p>
+              <p className="font-semibold">${parseFloat(item.costPrice || 0).toFixed(2)}</p>
             </div>
           )}
           <div>

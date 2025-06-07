@@ -202,35 +202,25 @@ const Receipt = ({
             </div>
             
             {/* Totals */}
-            <div className="border-t border-dashed pt-2 mb-4">
+            <div className="border-t border-b border-dashed py-2">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span>{formatCurrency(subtotal, currency)}</span>
+                <span>{formatCurrency(parseFloat(sale.subtotal), currency)}</span>
               </div>
-              
-              {discount > 0 && (
-                <div className="flex justify-between">
+              {parseFloat(sale.discount) > 0 && (
+                <div className="flex justify-between text-red-600">
                   <span>Discount:</span>
-                  <span>-{formatCurrency(discount, currency)}</span>
+                  <span>-{formatCurrency(parseFloat(sale.discount), currency)}</span>
                 </div>
               )}
-              
               <div className="flex justify-between">
                 <span>Tax:</span>
-                <span>{formatCurrency(tax, currency)}</span>
+                <span>{formatCurrency(parseFloat(sale.tax), currency)}</span>
               </div>
-              
-              <div className="flex justify-between font-bold border-t border-dashed mt-1 pt-1">
-                <span>TOTAL:</span>
-                <span>{formatCurrency(total, currency)}</span>
+              <div className="flex justify-between font-bold mt-1 pt-1 border-t">
+                <span>Total:</span>
+                <span>{formatCurrency(parseFloat(sale.total), currency)}</span>
               </div>
-              
-              {sale.paymentMethod && (
-                <div className="flex justify-between mt-2">
-                  <span>Payment Method:</span>
-                  <span>{sale.paymentMethod}</span>
-                </div>
-              )}
             </div>
             
             {/* Footer */}

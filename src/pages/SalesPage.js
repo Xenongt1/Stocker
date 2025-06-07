@@ -7,40 +7,7 @@ import { useNotification } from '../components/NotificationSystem';
 import { LoadingButton, ComponentLoader } from '../components/LoadingState';
 import { useAppSettings } from '../context/AppSettingsContext';
 import Receipt from '../components/Receipt';
-import axios from 'axios';
-
-// Create axios instance with base URL and better error handling
-const api = axios.create({
-  baseURL: 'http://localhost:5000/api'
-});
-
-// Add request interceptor
-api.interceptors.request.use(
-  (config) => {
-    console.log('Sending request to:', config.url);
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers['x-auth-token'] = token;
-    }
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor
-api.interceptors.response.use(
-  (response) => {
-    console.log('Response received:', response.status);
-    return response;
-  },
-  (error) => {
-    console.error('API Error Response:', error.response ? error.response.data : error.message);
-    return Promise.reject(error);
-  }
-);
+import { salesService, productService } from '../services/api';
 
 // Sales Page Component
 const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
@@ -66,8 +33,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   const [isFetchingSales, setIsFetchingSales] = useState(false);
   const [selectedSale, setSelectedSale] = useState(null);
   
-  // Use the notification context
-  const notification = useNotification();
+  // Get notification functions with correct names
+  const { 
+    success: showNotification,
+    error: showError,
+    warning: showWarning
+  } = useNotification();
   
   // Fetch products from API when component mounts
   useEffect(() => {
@@ -79,14 +50,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
     setIsLoading(true);
     try {
       console.log('Fetching products from API...');
-      const response = await api.get('/products');
-      console.log('Products fetched successfully:', response.data.length, 'items');
-      setProducts(response.data);
+      const response = await productService.getAllProducts();
+      console.log('Products fetched successfully:', response.length, 'items');
+      setProducts(response);
     } catch (err) {
       console.error('Error fetching products:', err);
-      notification.error(err.response?.data?.msg || 'Failed to fetch products. Please check your connection.');
-      
-      // Set empty products array as fallback
+      showError(err.message || 'Failed to fetch products. Please check your connection.');
       setProducts([]);
     } finally {
       setIsLoading(false);
@@ -97,14 +66,11 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   const fetchPastSales = async () => {
     setIsFetchingSales(true);
     try {
-      const response = await api.get('/sales');
-      console.log('Past sales fetched:', response.data);
-      setPastSales(response.data.sales);
-      setShowPastSales(true);
+      const sales = await salesService.getSales();
+      setPastSales(sales);
     } catch (err) {
       console.error('Error fetching sales:', err);
-      notification.error(err.response?.data?.msg || 'Failed to fetch past sales');
-      setPastSales([]);
+      showError(err.message || 'Failed to fetch sales history');
     } finally {
       setIsFetchingSales(false);
     }
@@ -113,24 +79,26 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   // View a specific sale receipt
   const viewSaleReceipt = async (saleId) => {
     try {
-      const response = await api.get(`/sales/${saleId}`);
-      const sale = response.data;
+      console.log('Fetching sale details for ID:', saleId);
+      const sale = await salesService.getSale(saleId);
+      console.log('Sale details fetched:', sale);
       
       const receiptData = {
-        id: sale.saleNumber || sale._id,
+        id: sale.id,
         items: sale.items.map(item => ({
-          id: item.product,
+          id: item.product_id,
           name: item.name,
           price: item.price,
-          quantity: item.quantity
+          quantity: item.quantity,
+          total: item.total
         })),
+        subtotal: sale.subtotal,
         discount: sale.discount,
         tax: sale.tax,
-        subtotal: sale.subtotal,
         total: sale.total,
-        paymentMethod: sale.paymentMethod,
-        date: new Date(sale.date),
-        cashier: sale.userName || (sale.userRole === 'admin' ? 'Admin' : 'User')
+        payment_method: sale.payment_method,
+        date: new Date(sale.created_at),
+        cashier: sale.cashier_name || 'Admin'
       };
       
       setReceiptData(receiptData);
@@ -138,7 +106,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       setShowPastSales(false);
     } catch (err) {
       console.error('Error fetching sale details:', err);
-      notification.error('Failed to fetch receipt details');
+      showError(err.message || 'Failed to fetch receipt details');
     }
   };
   
@@ -160,38 +128,31 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
     }
   };
   
-  const handleSaveSettings = () => {
-    setUpdateSuccess(true);
-    setTimeout(() => {
-      setUpdateSuccess(false);
-    }, 3000);
-  };
-
   // Add product to cart
   const addToCart = (product) => {
-    const existingItem = cart.find(item => item.id === product._id);
+    const existingItem = cart.find(item => item.id === product.id);
     
     if (existingItem) {
       // Make sure we don't exceed available quantity
       if (existingItem.quantity + 1 > product.quantity) {
-        notification.warning(`Only ${product.quantity} units available in stock`);
+        showWarning(`Only ${product.quantity} units available in stock`);
         return;
       }
       
       const updatedCart = cart.map(item => 
-        item.id === product._id 
+        item.id === product.id 
           ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.price } 
           : item
       );
       setCart(updatedCart);
     } else {
       if (product.quantity < 1) {
-        notification.warning('This product is out of stock');
+        showWarning('This product is out of stock');
         return;
       }
       
       setCart([...cart, { 
-        id: product._id, 
+        id: product.id, 
         name: product.name, 
         price: product.price, 
         quantity: 1, 
@@ -213,7 +174,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
     const product = products.find(p => p._id === productId);
     
     if (product && newQuantity > product.quantity) {
-      notification.warning(`Only ${product.quantity} units available in stock`);
+      showWarning(`Only ${product.quantity} units available in stock`);
       return;
     }
     
@@ -229,12 +190,12 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   // Apply discount
   const applyDiscount = () => {
     if (!isAdmin && discount > 20) {
-      notification.warning("Users can only apply discounts up to $20. Please contact an admin for higher discounts.");
+      showWarning("Users can only apply discounts up to $20. Please contact an admin for higher discounts.");
       setDiscount(20);
     }
     
     if (discount > subtotal) {
-      notification.warning("Discount cannot exceed subtotal amount.");
+      showWarning("Discount cannot exceed subtotal amount.");
       setDiscount(subtotal);
     }
     
@@ -250,7 +211,7 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
   // Complete sale
   const completeSale = async () => {
     if (cart.length === 0) {
-      notification.error("Cannot complete sale with an empty cart.");
+      showError("Cannot complete sale with an empty cart.");
       return;
     }
     
@@ -262,46 +223,45 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       // Format sale data for the API
       const saleData = {
         items: cart.map(item => ({
-          product: item.id,
-          name: item.name,
+          product_id: item.id,
           quantity: item.quantity,
           price: item.price,
-          total: item.total
+          total: item.quantity * item.price
         })),
         subtotal: subtotal,
         discount: discount,
         tax: taxAmount,
         total: total,
-        paymentMethod: paymentMethod
+        payment_method: paymentMethod
       };
       
       console.log('Attempting to send sale data to API:', JSON.stringify(saleData));
       
-      // Send to the API with explicit timeout
-      const response = await api.post('/sales', saleData, { 
-        timeout: 10000  // 10 second timeout
-      });
+      // Send to the API
+      const response = await salesService.recordSale(saleData);
       
-      console.log('Sale completed successfully, server response:', response.data);
+      console.log('Sale completed successfully, server response:', response);
       
       // Create receipt data object for display
       const receiptData = {
-        id: response.data.saleNumber || response.data._id || 'SALE-' + Date.now(),
+        id: response.id,
         items: cart.map(item => ({
           id: item.id,
           name: item.name,
           price: item.price,
-          quantity: item.quantity
+          quantity: item.quantity,
+          total: item.quantity * item.price
         })),
+        subtotal: subtotal,
         discount: discount,
         tax: taxAmount,
         total: total,
-        paymentMethod: paymentMethod,
-        date: new Date(),
+        payment_method: paymentMethod,
+        date: new Date(response.created_at),
         cashier: isAdmin ? 'Admin' : 'User'
       };
       
-      notification.success(`Sale completed! Total: $${total.toFixed(2)}`);
+      showNotification(`Sale completed! Total: $${total.toFixed(2)}`);
       
       // Generate receipt
       generateReceipt(receiptData);
@@ -317,13 +277,13 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
       console.error('Error completing sale:', err);
       let errorMessage = 'Failed to complete sale';
       
-      if (err.response && err.response.data && err.response.data.msg) {
-        errorMessage = err.response.data.msg;
+      if (err.response && err.response.data && err.response.data.error) {
+        errorMessage = err.response.data.error;
       } else if (err.message) {
-        errorMessage = `Error: ${err.message}`;
+        errorMessage = err.message;
       }
       
-      notification.error(errorMessage);
+      showError(errorMessage);
     } finally {
       setIsProcessingSale(false);
     }
@@ -651,20 +611,22 @@ const SalesPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdat
                   <th className="p-2">Date</th>
                   <th className="p-2">Items</th>
                   <th className="p-2">Total</th>
+                  <th className="p-2">Cashier</th>
                   <th className="p-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pastSales.map(sale => (
-                  <tr key={sale._id} className="border-b hover:bg-gray-50">
-                    <td className="p-2">{sale.saleNumber || sale._id.substring(0, 8)}</td>
-                    <td className="p-2">{new Date(sale.date).toLocaleDateString()}</td>
+                  <tr key={sale.id} className="border-b hover:bg-gray-50">
+                    <td className="p-2">{sale.id}</td>
+                    <td className="p-2">{new Date(sale.created_at).toLocaleDateString()}</td>
                     <td className="p-2">{sale.items.length}</td>
-                    <td className="p-2">${sale.total.toFixed(2)}</td>
+                    <td className="p-2">${parseFloat(sale.total).toFixed(2)}</td>
+                    <td className="p-2">{sale.cashier_name || 'System'}</td>
                     <td className="p-2">
                       <button
                         className="text-blue-600 hover:underline"
-                        onClick={() => viewSaleReceipt(sale._id)}
+                        onClick={() => viewSaleReceipt(sale.id)}
                       >
                         View Receipt
                       </button>

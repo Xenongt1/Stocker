@@ -13,16 +13,16 @@ const LoginPage = ({ onLoginSuccess }) => {
     setIsLoading(true);
     
     try {
-      const userData = await authService.login(username, password);
+      const data = await authService.login(username, password);
       setIsLoading(false);
       
       // Call the parent component's handler with the user data
       if (onLoginSuccess) {
-        onLoginSuccess(userData.user);
+        onLoginSuccess(data.user);
       }
     } catch (err) {
       setIsLoading(false);
-      setError(err.msg || 'Failed to login. Please check your credentials.');
+      setError(err.message || 'Failed to login. Please check your credentials.');
     }
   };
   

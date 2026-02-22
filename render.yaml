@@ -24,9 +24,8 @@ services:
         generateValue: true
 
   # Frontend Service
-  - type: static
+  - type: static_site
     name: stocker-frontend
-    runtime: static
     buildCommand: npm install && npm run build
     publishPath: ./build
     envVars:

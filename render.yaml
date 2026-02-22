@@ -31,11 +31,7 @@ services:
     staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
-        fromService:
-          type: web
-          name: stocker-backend
-          property: url
-        suffix: /api
+        sync: false
     routes:
       - type: rewrite
         source: /*

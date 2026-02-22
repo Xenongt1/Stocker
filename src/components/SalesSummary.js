@@ -1,20 +1,23 @@
 import React from 'react';
 
+import { useCurrency } from '../hooks/useCurrency';
+
 function SalesSummary({ sales = [], title = "Sales Summary", showDetails = false }) {
+  const { formatCurrency } = useCurrency();
   // Calculate total amount
   const totalAmount = sales.reduce((sum, sale) => sum + sale.amount, 0);
-  
+
   // Calculate total items
   const totalItems = sales.reduce((sum, sale) => sum + sale.quantity, 0);
-  
+
   return (
     <div className="bg-white p-4 rounded shadow">
       <h3 className="font-bold mb-3">{title}</h3>
-      
+
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-blue-50 p-3 rounded">
           <p className="text-sm text-gray-600">Total Sales</p>
-          <p className="text-xl font-bold">${totalAmount.toFixed(2)}</p>
+          <p className="text-xl font-bold">{formatCurrency(totalAmount)}</p>
         </div>
         <div className="bg-green-50 p-3 rounded">
           <p className="text-sm text-gray-600">Items Sold</p>
@@ -25,7 +28,7 @@ function SalesSummary({ sales = [], title = "Sales Summary", showDetails = false
           <p className="text-xl font-bold">{sales.length}</p>
         </div>
       </div>
-      
+
       {showDetails && sales.length > 0 && (
         <div>
           <h4 className="font-medium mb-2 text-gray-700">Recent Transactions</h4>
@@ -43,7 +46,7 @@ function SalesSummary({ sales = [], title = "Sales Summary", showDetails = false
                 <tr key={index} className="border-b">
                   <td className="py-2">{sale.product}</td>
                   <td className="py-2">{sale.quantity}</td>
-                  <td className="py-2">${sale.amount.toFixed(2)}</td>
+                  <td className="py-2">{formatCurrency(sale.amount)}</td>
                   <td className="py-2">{sale.date}</td>
                 </tr>
               ))}
@@ -51,13 +54,13 @@ function SalesSummary({ sales = [], title = "Sales Summary", showDetails = false
           </table>
         </div>
       )}
-      
+
       {!showDetails && sales.length > 0 && (
         <div className="flex justify-end">
           <button className="text-blue-600 text-sm hover:underline">View Details →</button>
         </div>
       )}
-      
+
       {sales.length === 0 && (
         <div className="text-center py-4 text-gray-500">
           No sales data available for the selected period.

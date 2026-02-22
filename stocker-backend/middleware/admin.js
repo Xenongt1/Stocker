@@ -1,6 +1,7 @@
-module.exports = function(req, res, next) {
+module.exports = function (req, res, next) {
     // Check if user is admin
-    if (!req.user || !req.user.user || req.user.user.role !== 'admin') {
+    // req.user is already the user object from auth middleware
+    if (!req.user || req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
     }
     next();

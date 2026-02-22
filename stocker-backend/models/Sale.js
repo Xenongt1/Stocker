@@ -4,41 +4,40 @@ class Sale {
   static async create(saleData) {
     // Start a transaction
     const client = await db.pool.connect();
-    
+
     try {
       await client.query('BEGIN');
-      
+
       // Insert the sale record
       const saleQuery = `
-        INSERT INTO sales (user_id, subtotal, discount, tax, total, payment_method)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
+        INSERT INTO sales (user_id, subtotal, discount, tax, total, payment_method, amount_paid)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `;
-      
+
       const saleValues = [
         saleData.userId,
         saleData.subtotal,
         saleData.discount || 0,
         saleData.tax || 0,
         saleData.total,
-        saleData.paymentMethod || 'Cash'
+        saleData.paymentMethod || 'Cash',
+        saleData.amountPaid || saleData.total // Default to total if not provided
       ];
 
-      const { rows: [sale] } = await client.query(saleQuery, saleValues);
+      const saleResult = await client.query(saleQuery, saleValues);
+      const saleId = saleResult.insertId;
 
       // Insert sale items and update product quantities
       for (const item of saleData.items) {
         // Insert sale item
         const itemQuery = `
-          INSERT INTO sale_items (sale_id, product_id, name, quantity, price, total)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING *
+          INSERT INTO sale_items (sale_id, product_id, quantity, price, total)
+          VALUES (?, ?, ?, ?, ?)
         `;
-        
+
         const itemValues = [
-          sale.id,
+          saleId,
           item.productId,
-          item.name,
           item.quantity,
           item.price,
           item.total
@@ -49,20 +48,19 @@ class Sale {
         // Update product quantity
         const updateProductQuery = `
           UPDATE products 
-          SET quantity = quantity - $1
-          WHERE id = $2 AND quantity >= $1
-          RETURNING *
+          SET quantity = quantity - ?
+          WHERE id = ? AND quantity >= ?
         `;
 
-        const { rows: [updatedProduct] } = await client.query(updateProductQuery, [item.quantity, item.productId]);
-        
-        if (!updatedProduct) {
+        const updateResult = await client.query(updateProductQuery, [item.quantity, item.productId, item.quantity]);
+
+        if (updateResult.rowCount === 0) {
           throw new Error(`Insufficient stock for product ${item.name}`);
         }
       }
 
       await client.query('COMMIT');
-      return await this.findById(sale.id); // Get complete sale with items
+      return await this.findById(saleId); // Get complete sale with items
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -72,8 +70,8 @@ class Sale {
   }
 
   static async findById(id) {
-    const saleQuery = 'SELECT * FROM sales WHERE id = $1';
-    const itemsQuery = 'SELECT * FROM sale_items WHERE sale_id = $1';
+    const saleQuery = 'SELECT * FROM sales WHERE id = ?';
+    const itemsQuery = 'SELECT * FROM sale_items WHERE sale_id = ?';
 
     const { rows: [sale] } = await db.query(saleQuery, [id]);
     if (!sale) return null;
@@ -93,21 +91,18 @@ class Sale {
     let paramCount = 1;
 
     if (filters.userId) {
-      conditions.push(`s.user_id = $${paramCount}`);
+      conditions.push(`s.user_id = ?`);
       values.push(filters.userId);
-      paramCount++;
     }
 
     if (filters.startDate) {
-      conditions.push(`s.created_at >= $${paramCount}`);
+      conditions.push(`s.created_at >= ?`);
       values.push(filters.startDate);
-      paramCount++;
     }
 
     if (filters.endDate) {
-      conditions.push(`s.created_at <= $${paramCount}`);
+      conditions.push(`s.created_at <= ?`);
       values.push(filters.endDate);
-      paramCount++;
     }
 
     if (conditions.length > 0) {
@@ -120,7 +115,7 @@ class Sale {
 
     // Get items for all sales
     for (const sale of sales) {
-      const { rows: items } = await db.query('SELECT * FROM sale_items WHERE sale_id = $1', [sale.id]);
+      const { rows: items } = await db.query('SELECT * FROM sale_items WHERE sale_id = ?', [sale.id]);
       sale.items = items;
     }
 
@@ -147,34 +142,45 @@ class Sale {
     }
 
     const query = `
-      SELECT 
-        TO_CHAR(created_at, $1) as period,
+      SELECT
+        DATE_FORMAT(created_at, ?) as period,
         COUNT(*) as total_sales,
         SUM(total) as total_revenue,
         AVG(total) as average_sale,
         SUM(quantity) as total_items
       FROM sales s
       JOIN sale_items si ON s.id = si.sale_id
-      GROUP BY TO_CHAR(created_at, $1)
+      GROUP BY DATE_FORMAT(created_at, ?)
       ORDER BY period DESC
       LIMIT 30
-    `;
+      `;
 
-    const { rows } = await db.query(query, [timeFormat]);
+    // Map format strings
+    const formatMap = {
+      'YYYY-MM-DD HH24': '%Y-%m-%d %H',
+      'YYYY-MM-DD': '%Y-%m-%d',
+      'YYYY-IW': '%Y-%u',
+      'YYYY-MM': '%Y-%m'
+    };
+
+    // Use mapped format or default
+    const mysqlFormat = formatMap[timeFormat] || '%Y-%m-%d';
+
+    const { rows } = await db.query(query, [mysqlFormat, mysqlFormat]);
     return rows;
   }
 
   static async delete(id) {
     const client = await db.pool.connect();
-    
+
     try {
       await client.query('BEGIN');
 
       // Delete sale items first (cascade will handle this automatically)
-      await client.query('DELETE FROM sales WHERE id = $1 RETURNING id', [id]);
+      const deleteResult = await client.query('DELETE FROM sales WHERE id = ?', [id]);
 
       await client.query('COMMIT');
-      return true;
+      return deleteResult.rowCount > 0;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

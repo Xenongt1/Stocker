@@ -1,28 +1,25 @@
-const { Client } = require('pg');
+const mysql = require('mysql2/promise');
 require('dotenv').config();
 
 const ensureDatabase = async () => {
-    const client = new Client({
-        user: process.env.DB_USER || 'postgres',
+    // Create connection to initialized without database selected
+    const connection = await mysql.createConnection({
         host: process.env.DB_HOST || 'localhost',
-        password: process.env.DB_PASSWORD || 'karabum05',
-        port: process.env.DB_PORT || 5432,
-        database: 'postgres' // Connect to default postgres database
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD,
+        port: process.env.DB_PORT || 3306
     });
 
     try {
-        await client.connect();
-        
-        // Check if our database exists
-        const result = await client.query(
-            "SELECT 1 FROM pg_database WHERE datname = $1",
-            ['stocker_db']
+        // Check if database exists
+        const [rows] = await connection.query(
+            `SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?`,
+            [process.env.DB_NAME || 'stocker_db']
         );
 
-        // Create database if it doesn't exist
-        if (result.rows.length === 0) {
+        if (rows.length === 0) {
             console.log('Creating database...');
-            await client.query('CREATE DATABASE stocker_db');
+            await connection.query(`CREATE DATABASE \`${process.env.DB_NAME || 'stocker_db'}\``);
             console.log('Database created successfully');
         } else {
             console.log('Database already exists');
@@ -31,7 +28,7 @@ const ensureDatabase = async () => {
         console.error('Error ensuring database exists:', err);
         throw err;
     } finally {
-        await client.end();
+        await connection.end();
     }
 };
 
@@ -44,4 +41,4 @@ if (require.main === module) {
         });
 } else {
     module.exports = { ensureDatabase };
-} 
+}

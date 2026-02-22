@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
-import { formatCurrency } from '../utils/formatCurrency';
+import { useCurrency } from '../hooks/useCurrency';
 import { useAppSettings } from '../context/AppSettingsContext';
 import Receipt from './Receipt';
-const ReceiptGenerator = ({ 
+const ReceiptGenerator = ({
   receiptData,
   storeName,
   storeAddress = '123 Store Street, City',
@@ -14,15 +14,15 @@ const ReceiptGenerator = ({
   onClose
 }) => {
   const { settings } = useAppSettings();
-  
+  const { formatCurrency } = useCurrency();
+
   // Use context values as fallbacks if props aren't provided
   const effectiveStoreName = storeName || settings.storeName;
-  const effectiveCurrency = currency || settings.currency;
   const effectiveTaxRate = taxRate || settings.taxRate;
   const receiptFooter = settings.receiptFooter;
   const receiptRef = useRef(null);
-  
-  const { 
+
+  const {
     receiptNumber,
     date,
     items,
@@ -32,24 +32,24 @@ const ReceiptGenerator = ({
     customer = 'Customer',
     paymentMethod = 'Cash'
   } = receiptData;
-  
+
   // Calculate tax and total
   const tax = ((subtotal - discount) * (taxRate / 100)).toFixed(2);
   const total = (parseFloat(subtotal) - parseFloat(discount) + parseFloat(tax)).toFixed(2);
-  
+
   // Format date
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
-  
+
   const handlePrint = () => {
     if (onPrint) {
       onPrint();
     } else {
       const content = receiptRef.current.innerHTML;
       const printWindow = window.open('', '_blank');
-      
+
       printWindow.document.write(`
         <html>
           <head>
@@ -110,7 +110,7 @@ const ReceiptGenerator = ({
           </body>
         </html>
       `);
-      
+
       printWindow.document.close();
       printWindow.focus();
       setTimeout(() => {
@@ -119,14 +119,14 @@ const ReceiptGenerator = ({
       }, 500);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-medium">Receipt / Invoice</h3>
-            <button 
+            <button
               className="text-gray-400 hover:text-gray-500"
               onClick={onClose}
             >
@@ -135,7 +135,7 @@ const ReceiptGenerator = ({
               </svg>
             </button>
           </div>
-          
+
           <div ref={receiptRef} className="receipt font-mono text-sm">
             <div className="receipt-header text-center mb-4">
               <h2 className="text-xl font-bold">{storeName}</h2>
@@ -143,7 +143,7 @@ const ReceiptGenerator = ({
               <p>{storePhone}</p>
               <p>{storeEmail}</p>
             </div>
-            
+
             <div className="receipt-info border-t border-b border-dashed border-gray-400 py-2 mb-4">
               <div className="flex justify-between">
                 <span>Receipt #:</span>
@@ -162,7 +162,7 @@ const ReceiptGenerator = ({
                 <span>{customer}</span>
               </div>
             </div>
-            
+
             <div className="receipt-items mb-4">
               <div className="font-bold flex justify-between border-b pb-1 mb-2">
                 <span>Item</span>
@@ -172,39 +172,39 @@ const ReceiptGenerator = ({
                   <span className="w-24 text-right">Total</span>
                 </div>
               </div>
-              
+
               {items.map((item, index) => (
                 <div key={index} className="flex justify-between mb-1">
                   <span className="truncate max-w-[150px]">{item.name}</span>
                   <div className="flex">
                     <span className="w-16 text-right">{item.quantity}</span>
-                    <span className="w-20 text-right">{formatCurrency(item.price, currency)}</span>
-                    <span className="w-24 text-right">{formatCurrency(item.total, currency)}</span>
+                    <span className="w-20 text-right">{formatCurrency(item.price)}</span>
+                    <span className="w-24 text-right">{formatCurrency(item.total)}</span>
                   </div>
                 </div>
               ))}
             </div>
-            
+
             <div className="receipt-summary border-t border-dashed border-gray-400 pt-2">
               <div className="flex justify-between mb-1">
                 <span>Subtotal:</span>
-                <span>{formatCurrency(subtotal, currency)}</span>
+                <span>{formatCurrency(subtotal)}</span>
               </div>
               {discount > 0 && (
                 <div className="flex justify-between mb-1">
                   <span>Discount:</span>
-                  <span>-{formatCurrency(discount, currency)}</span>
+                  <span>-{formatCurrency(discount)}</span>
                 </div>
               )}
               <div className="flex justify-between mb-1">
                 <span>Tax ({taxRate}%):</span>
-                <span>{formatCurrency(tax, currency)}</span>
+                <span>{formatCurrency(tax)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg mt-2">
                 <span>Total:</span>
-                <span>{formatCurrency(total, currency)}</span>
+                <span>{formatCurrency(total)}</span>
               </div>
-              
+
               <div className="mt-4 pt-2 border-t border-dashed border-gray-400">
                 <div className="flex justify-between">
                   <span>Payment Method:</span>
@@ -212,12 +212,12 @@ const ReceiptGenerator = ({
                 </div>
               </div>
             </div>
-            
+
             <div className="receipt-footer text-center mt-6 pt-2 border-t border-dashed border-gray-400">
               <p>{receiptFooter}</p>
             </div>
           </div>
-          
+
           <div className="mt-6 flex justify-end space-x-3">
             <button
               className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -232,8 +232,8 @@ const ReceiptGenerator = ({
               Print Receipt
             </button>
             <div className="receipt-footer text-center mt-6 pt-2 border-t border-dashed border-gray-400">
-    <p>{receiptFooter}</p>
-  </div>
+              <p>{receiptFooter}</p>
+            </div>
           </div>
         </div>
       </div>

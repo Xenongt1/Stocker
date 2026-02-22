@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 // Create an axios instance with a base URL
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api'
+  baseURL: API_URL
 });
 
 // Add token to requests
@@ -53,11 +54,11 @@ export const authService = {
     try {
       console.log('Attempting login for user:', username);
       const response = await api.post('/auth/login', { username, password });
-      
+
       // Store the token and user data
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
-      
+
       console.log('Login successful, token stored');
       return response.data;
     } catch (error) {
@@ -68,7 +69,7 @@ export const authService = {
       throw new Error('Login failed. Please try again.');
     }
   },
-  
+
   // Get current user info
   getCurrentUser: async () => {
     try {
@@ -82,21 +83,21 @@ export const authService = {
       throw new Error('Failed to get user info');
     }
   },
-  
+
   // Logout user
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     console.log('User logged out, auth data cleared');
   },
-  
+
   // Check if user is logged in
   isLoggedIn: () => {
     const token = localStorage.getItem('token');
     console.log('Checking login status:', !!token);
     return token !== null;
   },
-  
+
   // Check if user is admin
   isAdmin: () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -115,7 +116,7 @@ export const productService = {
       throw error.response ? error.response.data : new Error('Failed to fetch products');
     }
   },
-  
+
   // Get single product
   getProduct: async (id) => {
     try {
@@ -125,7 +126,7 @@ export const productService = {
       throw error.response ? error.response.data : new Error('Failed to fetch product');
     }
   },
-  
+
   // Add new product
   addProduct: async (productData) => {
     try {
@@ -135,7 +136,7 @@ export const productService = {
       throw error.response ? error.response.data : new Error('Failed to add product');
     }
   },
-  
+
   // Update product
   updateProduct: async (id, productData) => {
     try {
@@ -145,7 +146,7 @@ export const productService = {
       throw error.response ? error.response.data : new Error('Failed to update product');
     }
   },
-  
+
   // Delete product
   deleteProduct: async (id) => {
     try {
@@ -155,7 +156,7 @@ export const productService = {
       throw error.response ? error.response.data : new Error('Failed to delete product');
     }
   },
-  
+
   // Update stock
   updateStock: async (id, adjustment) => {
     try {
@@ -185,7 +186,7 @@ export const salesService = {
         total: parseFloat(saleData.total),
         payment_method: saleData.payment_method || 'Cash'
       });
-      
+
       return {
         ...response.data,
         total: parseFloat(response.data.total),
@@ -203,16 +204,16 @@ export const salesService = {
       throw new Error('Failed to record sale: ' + error.message);
     }
   },
-  
+
   // Get sales history
   getSales: async (filters = {}) => {
     try {
       const params = new URLSearchParams();
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
-      
+
       const response = await api.get(`/sales?${params.toString()}`);
-      
+
       return response.data.map(sale => ({
         ...sale,
         subtotal: parseFloat(sale.subtotal),
@@ -235,7 +236,7 @@ export const salesService = {
       throw new Error('Failed to fetch sales: ' + error.message);
     }
   },
-  
+
   // Get a single sale
   getSale: async (id) => {
     try {
@@ -262,7 +263,7 @@ export const salesService = {
       throw new Error('Failed to fetch sale: ' + error.message);
     }
   },
-  
+
   // Get sales statistics
   getSalesStats: async (period = 'daily') => {
     try {
@@ -277,65 +278,183 @@ export const salesService = {
     } catch (error) {
       throw error.response ? error.response.data : new Error('Failed to fetch sales statistics');
     }
+  },
+
+  // Get sales chart data
+  getSalesChart: async (period = 'daily', startDate, endDate) => {
+    try {
+      const params = new URLSearchParams({ period });
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+
+      const response = await api.get(`/sales/stats/chart?${params.toString()}`);
+      return response.data.map(item => ({
+        ...item,
+        amount: parseFloat(item.amount),
+        profit: parseFloat(item.profit)
+      }));
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to fetch chart data');
+    }
+  },
+
+  // Get product performance stats
+  getProductPerformance: async (startDate, endDate) => {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+
+      const response = await api.get(`/sales/stats/products?${params.toString()}`);
+      return response.data.map(item => ({
+        ...item,
+        amount: parseFloat(item.amount),
+        profit: parseFloat(item.profit),
+        quantity: parseInt(item.quantity)
+      }));
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to fetch product stats');
+    }
+  },
+
+  // Get sidebar statistics (low stock, pending orders)
+  getSidebarStats: async () => {
+    try {
+      const response = await api.get('/sales/stats/sidebar');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch sidebar stats:', error);
+      return { lowStock: 0, pendingOrders: 0 };
+    }
   }
 };
 
 // Categories Services
 export const categoryService = {
-    // Get all categories with stats
-    getAllCategories: async (period = 'all') => {
-        try {
-            const response = await api.get(`/categories?period=${period}`);
-            return response.data;
-        } catch (error) {
-            throw error.response ? error.response.data : new Error('Failed to fetch categories');
-        }
-    },
-    
-    // Get single category with stats
-    getCategory: async (id, period = 'all') => {
-        try {
-            const response = await api.get(`/categories/${id}?period=${period}`);
-            return response.data;
-        } catch (error) {
-            throw error.response ? error.response.data : new Error('Failed to fetch category');
-        }
-    },
-    
-    // Create new category
-    createCategory: async (categoryData) => {
-        try {
-            const response = await api.post('/categories', categoryData);
-            return response.data;
-        } catch (error) {
-            throw error.response ? error.response.data : new Error('Failed to create category');
-        }
-    },
-    
-    // Update category
-    updateCategory: async (id, categoryData) => {
-        try {
-            const response = await api.put(`/categories/${id}`, categoryData);
-            return response.data;
-        } catch (error) {
-            throw error.response ? error.response.data : new Error('Failed to update category');
-        }
-    },
-    
-    // Delete category
-    deleteCategory: async (id) => {
-        try {
-            const response = await api.delete(`/categories/${id}`);
-            return response.data;
-        } catch (error) {
-            throw error.response ? error.response.data : new Error('Failed to delete category');
-        }
+  // Get all categories with stats
+  getAllCategories: async (period = 'all') => {
+    try {
+      const response = await api.get(`/categories?period=${period}`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to fetch categories');
     }
+  },
+
+  // Get single category with stats
+  getCategory: async (id, period = 'all') => {
+    try {
+      const response = await api.get(`/categories/${id}?period=${period}`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to fetch category');
+    }
+  },
+
+  // Create new category
+  createCategory: async (categoryData) => {
+    try {
+      const response = await api.post('/categories', categoryData);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to create category');
+    }
+  },
+
+  // Update category
+  updateCategory: async (id, categoryData) => {
+    try {
+      const response = await api.put(`/categories/${id}`, categoryData);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to update category');
+    }
+  },
+
+  // Delete category
+  deleteCategory: async (id) => {
+    try {
+      const response = await api.delete(`/categories/${id}`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to delete category');
+    }
+  }
+};
+
+// User Services
+export const userService = {
+  // Get all users
+  getAllUsers: async () => {
+    try {
+      const response = await api.get('/users');
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to fetch users');
+    }
+  },
+
+  // Create new user
+  createUser: async (userData) => {
+    try {
+      const response = await api.post('/users', userData);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to create user');
+    }
+  },
+
+  // Update user
+  updateUser: async (id, userData) => {
+    try {
+      const response = await api.put(`/users/${id}`, userData);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to update user');
+    }
+  },
+
+  // Delete user
+  deleteUser: async (id) => {
+    try {
+      const response = await api.delete(`/users/${id}`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to delete user');
+    }
+  }
+};
+
+// Settings Services
+export const settingsService = {
+  // Get global settings
+  getSettings: async () => {
+    try {
+      const response = await api.get('/settings');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch settings, using defaults', error);
+      // Return null to let context fallback to defaults
+      return null;
+    }
+  },
+
+  // Update global settings
+  updateSettings: async (settingsData) => {
+    try {
+      const response = await api.put('/settings', settingsData);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : new Error('Failed to update settings');
+    }
+  }
 };
 
 export default {
   auth: authService,
   products: productService,
   sales: salesService,
-  categories: categoryService
+  categories: categoryService,
+  users: userService,
+  settings: settingsService
 };

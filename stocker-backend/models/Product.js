@@ -4,10 +4,9 @@ class Product {
   static async create(productData) {
     const query = `
       INSERT INTO products (name, sku, price, cost_price, quantity, category, description, min_stock_level)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    
+
     const values = [
       productData.name,
       productData.sku,
@@ -19,18 +18,19 @@ class Product {
       productData.minStockLevel || 5
     ];
 
-    const { rows } = await db.query(query, values);
-    return rows[0];
+    const result = await db.query(query, values);
+    const newProduct = await db.query('SELECT * FROM products WHERE id = ?', [result.insertId]);
+    return newProduct.rows[0];
   }
 
   static async findById(id) {
-    const query = 'SELECT * FROM products WHERE id = $1';
+    const query = 'SELECT * FROM products WHERE id = ?';
     const { rows } = await db.query(query, [id]);
     return rows[0];
   }
 
   static async findBySku(sku) {
-    const query = 'SELECT * FROM products WHERE sku = $1';
+    const query = 'SELECT * FROM products WHERE sku = ?';
     const { rows } = await db.query(query, [sku]);
     return rows[0];
   }
@@ -42,9 +42,8 @@ class Product {
     let paramCount = 1;
 
     if (filters.category) {
-      conditions.push(`category = $${paramCount}`);
+      conditions.push(`category = ?`);
       values.push(filters.category);
-      paramCount++;
     }
 
     if (filters.lowStock) {
@@ -66,7 +65,7 @@ class Product {
       'name', 'sku', 'price', 'cost_price', 'quantity',
       'category', 'description', 'min_stock_level'
     ];
-    
+
     const updateFields = [];
     const values = [];
     let paramCount = 1;
@@ -74,9 +73,8 @@ class Product {
     for (const [key, value] of Object.entries(updates)) {
       const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
       if (validFields.includes(snakeKey) && value !== undefined) {
-        updateFields.push(`${snakeKey} = $${paramCount}`);
+        updateFields.push(`${snakeKey} = ?`);
         values.push(value);
-        paramCount++;
       }
     }
 
@@ -86,30 +84,30 @@ class Product {
     const query = `
       UPDATE products 
       SET ${updateFields.join(', ')}
-      WHERE id = $${paramCount}
-      RETURNING *
+      WHERE id = ?
     `;
 
-    const { rows } = await db.query(query, values);
-    return rows[0];
+    await db.query(query, values);
+    const updatedProduct = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+    return updatedProduct.rows[0];
   }
 
   static async updateStock(id, adjustment) {
     const query = `
       UPDATE products 
-      SET quantity = quantity + $1
-      WHERE id = $2 AND (quantity + $1) >= 0
-      RETURNING *
+      SET quantity = quantity + ?
+      WHERE id = ? AND (quantity + ?) >= 0
     `;
 
-    const { rows } = await db.query(query, [adjustment, id]);
-    return rows[0];
+    await db.query(query, [adjustment, id, adjustment]);
+    const updatedProduct = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+    return updatedProduct.rows[0];
   }
 
   static async delete(id) {
-    const query = 'DELETE FROM products WHERE id = $1 RETURNING id';
-    const { rows } = await db.query(query, [id]);
-    return rows[0];
+    const query = 'DELETE FROM products WHERE id = ?';
+    await db.query(query, [id]);
+    return { id };
   }
 
   static async getLowStockProducts() {

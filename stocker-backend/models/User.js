@@ -6,17 +6,16 @@ const jwtConfig = require('../config/jwt');
 class User {
   static async create(userData) {
     const { username, email, password, role = 'user', firstName, lastName } = userData;
-    
+
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    
+
     const query = `
       INSERT INTO users (username, email, password, role, first_name, last_name)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, username, email, role, first_name, last_name, created_at
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
-    
+
     const result = await db.query(query, [
       username,
       email,
@@ -25,24 +24,29 @@ class User {
       firstName,
       lastName
     ]);
-    
-    return result.rows[0];
+
+    const newUser = await db.query(
+      'SELECT id, username, email, role, first_name, last_name, created_at FROM users WHERE id = ?',
+      [result.insertId]
+    );
+
+    return newUser.rows[0];
   }
 
   static async findByUsername(username) {
-    const query = 'SELECT * FROM users WHERE username = $1';
+    const query = 'SELECT * FROM users WHERE username = ?';
     const result = await db.query(query, [username]);
     return result.rows[0];
   }
 
   static async findByEmail(email) {
-    const query = 'SELECT * FROM users WHERE email = $1';
+    const query = 'SELECT * FROM users WHERE email = ?';
     const result = await db.query(query, [email]);
     return result.rows[0];
   }
 
   static async findById(id) {
-    const query = 'SELECT * FROM users WHERE id = $1';
+    const query = 'SELECT * FROM users WHERE id = ?';
     const result = await db.query(query, [id]);
     return result.rows[0];
   }
@@ -53,7 +57,7 @@ class User {
 
   static generateAuthToken(user) {
     return jwt.sign(
-      { 
+      {
         id: user.id,
         username: user.username,
         role: user.role
@@ -67,11 +71,11 @@ class User {
     const query = `
       UPDATE users 
       SET last_login = CURRENT_TIMESTAMP 
-      WHERE id = $1 
-      RETURNING *
+      WHERE id = ?
     `;
-    const result = await db.query(query, [userId]);
-    return result.rows[0];
+    await db.query(query, [userId]);
+    const updatedUser = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    return updatedUser.rows[0];
   }
 
   static async list() {
@@ -86,22 +90,19 @@ class User {
     let paramCount = 1;
 
     if (username) {
-      updates.push(`username = $${paramCount}`);
+      updates.push(`username = ?`);
       values.push(username);
-      paramCount++;
     }
 
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
-      updates.push(`password = $${paramCount}`);
+      updates.push(`password = ?`);
       values.push(hashedPassword);
-      paramCount++;
     }
 
     if (role) {
-      updates.push(`role = $${paramCount}`);
+      updates.push(`role = ?`);
       values.push(role);
-      paramCount++;
     }
 
     if (updates.length === 0) return null;
@@ -110,18 +111,18 @@ class User {
     const query = `
       UPDATE users 
       SET ${updates.join(', ')}
-      WHERE id = $${paramCount}
-      RETURNING id, username, role, created_at
+      WHERE id = ?
     `;
 
-    const { rows } = await db.query(query, values);
-    return rows[0];
+    await db.query(query, values);
+    const updatedUser = await db.query('SELECT id, username, role, created_at FROM users WHERE id = ?', [id]);
+    return updatedUser.rows[0];
   }
 
   static async delete(id) {
-    const query = 'DELETE FROM users WHERE id = $1 RETURNING id';
-    const { rows } = await db.query(query, [id]);
-    return rows[0];
+    const query = 'DELETE FROM users WHERE id = ?';
+    await db.query(query, [id]);
+    return { id };
   }
 }
 

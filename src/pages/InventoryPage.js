@@ -13,23 +13,28 @@ import ConfirmationDialog from '../components/ConfirmationDialog';
 import BarcodeScanner from '../components/BarcodeScanner';
 import { ComponentLoader } from '../components/LoadingState';
 import ProfilePicture from '../components/ProfilePicture';
-import { productService } from '../services/api';
+import { productService, categoryService } from '../services/api';
+import { useCurrency } from '../hooks/useCurrency';
 
 const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
+  const { currency } = useCurrency();
   // STATE
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFilters, setSearchFilters] = useState({});
-  
+
+  const [categories, setCategories] = useState([]);
+
   // MODAL STATE
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [currentProduct, setCurrentProduct] = useState(null);
-  
+
   // FORM STATE
   const [productForm, setProductForm] = useState({
     name: '',
@@ -41,22 +46,24 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     description: '',
     minStockLevel: ''
   });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // REFS
   const searchTimeoutRef = useRef(null);
   const isSearchingRef = useRef(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
-  
+
   // NOTIFICATION
   const { success: showSuccess, error: showError } = useNotification();
-  
+
   // Fetch products on component mount
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []);
-  
+
   // Validate product form
   const validateProductForm = () => {
     // Define validation rules
@@ -67,23 +74,23 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       quantity: [(value) => validateNumber(value, { min: 0, integer: true })],
       category: [validateRequired]
     };
-    
+
     // Add cost price validation for admin
     if (isAdmin) {
       validationRules.costPrice = [(value) => validateNumber(value, { min: 0.01 })];
     }
-    
+
     // Add min stock level validation if provided
     if (productForm.minStockLevel !== '') {
       validationRules.minStockLevel = [(value) => validateNumber(value, { required: false, min: 0, integer: true })];
     }
-    
+
     // Run validation
     const result = validateForm(productForm, validationRules);
     setFormErrors(result.errors);
     return result.isValid;
   };
-  
+
   // Fetch products from API
   const fetchProducts = async () => {
     setIsLoading(true);
@@ -100,7 +107,36 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       setIsLoading(false);
     }
   };
-  
+
+  // Fetch categories
+  const fetchCategories = async () => {
+    try {
+      const response = await categoryService.getAllCategories();
+      setCategories(response.map(cat => ({ value: cat.name, label: cat.name })));
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      // Don't show error for categories to avoid spamming if just empty
+    }
+  };
+
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryForm.name) return;
+
+    setIsSubmitting(true);
+    try {
+      await categoryService.createCategory(categoryForm);
+      showSuccess('Category created successfully');
+      setShowAddCategoryModal(false);
+      setCategoryForm({ name: '', description: '' });
+      fetchCategories(); // Refresh list
+    } catch (err) {
+      showError(err.error || err.message || 'Failed to create category');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleProfileImageChange = (newImage) => {
     if (onProfileUpdate) {
       onProfileUpdate(newImage);
@@ -117,45 +153,45 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       setUpdateSuccess(false);
     }, 3000);
   };
-  
+
   // SEARCH HANDLING
   const handleSearch = (searchData) => {
     let filtered = [...products];
-    
+
     // Process simple search
     if (typeof searchData === 'string') {
       const term = searchData.toLowerCase();
       if (term) {
-        filtered = filtered.filter(product => 
-          product.name.toLowerCase().includes(term) || 
+        filtered = filtered.filter(product =>
+          product.name.toLowerCase().includes(term) ||
           product.sku.toLowerCase().includes(term) ||
           product.category.toLowerCase().includes(term)
         );
       }
-    } 
+    }
     // Process advanced search
     else if (searchData && typeof searchData === 'object') {
       const { searchTerm, filters } = searchData;
-      
+
       // Filter by search term
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        filtered = filtered.filter(product => 
-          product.name.toLowerCase().includes(term) || 
+        filtered = filtered.filter(product =>
+          product.name.toLowerCase().includes(term) ||
           product.sku.toLowerCase().includes(term) ||
           product.category.toLowerCase().includes(term)
         );
       }
-      
+
       // Apply additional filters if they exist
       if (filters) {
         const { category, stockStatus, sortBy } = filters;
-        
+
         // Category filter
         if (category) {
           filtered = filtered.filter(product => product.category === category);
         }
-        
+
         // Stock status filter
         if (stockStatus) {
           switch (stockStatus) {
@@ -163,7 +199,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               filtered = filtered.filter(product => product.quantity > product.minStockLevel);
               break;
             case 'lowStock':
-              filtered = filtered.filter(product => 
+              filtered = filtered.filter(product =>
                 product.quantity <= product.minStockLevel && product.quantity > 0
               );
               break;
@@ -172,7 +208,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               break;
           }
         }
-        
+
         // Sorting
         if (sortBy) {
           switch (sortBy) {
@@ -198,11 +234,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         }
       }
     }
-    
+
     // Update filtered products
     setFilteredProducts(filtered);
   };
-  
+
   // Initialize form for adding a new product
   const initializeAddForm = () => {
     setProductForm({
@@ -218,7 +254,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     setFormErrors({});
     setShowAddModal(true);
   };
-  
+
   // Initialize form for editing a product
   const initializeEditForm = (product) => {
     setCurrentProduct(product);
@@ -235,13 +271,13 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
     setFormErrors({});
     setShowEditModal(true);
   };
-  
+
   // Handle showing delete confirmation
   const handleShowDeleteModal = (product) => {
     setCurrentProduct(product);
     setShowDeleteModal(true);
   };
-  
+
   // Handle form input change
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -249,7 +285,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       ...prev,
       [name]: value
     }));
-    
+
     // Clear the specific error when user types
     if (formErrors[name]) {
       setFormErrors(prev => ({
@@ -258,21 +294,21 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       }));
     }
   };
-  
+
   // Enhanced add product function with better validation and error handling
   const handleAddProduct = async (e) => {
     e.preventDefault();
-    
+
     if (!validateProductForm()) {
       showError('Please fix the form errors before submitting.');
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
       console.log('Form data before conversion:', productForm);
-      
+
       // Sanitize and convert the numeric values
       const newProduct = {
         name: productForm.name,
@@ -284,15 +320,15 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         description: productForm.description,
         minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : 5
       };
-      
+
       console.log('Sending new product to API:', newProduct);
-      
+
       const response = await productService.addProduct(newProduct);
       console.log('Product added successfully, server response:', response);
-      
+
       // Update products with the response from server
       setProducts([...products, response]);
-      
+
       // Apply current filters to new products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
@@ -301,27 +337,26 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         // If no active filters, update filtered products directly
         setFilteredProducts([...filteredProducts, response]);
       }
-      
+
       setShowAddModal(false);
-      showSuccess('Product added successfully!');
     } catch (err) {
       console.error('Add product error:', err);
-      showError(err.message || 'Failed to add product. Please try again.');
+      showError(err.error || err.message || 'Failed to add product. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   // Edit existing product
   const handleEditProduct = async (e) => {
     e.preventDefault();
-    
+
     if (!validateProductForm()) {
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     const updatedProduct = {
       name: productForm.name,
       sku: productForm.sku,
@@ -332,26 +367,26 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       description: productForm.description,
       minStockLevel: productForm.minStockLevel ? parseInt(productForm.minStockLevel) : currentProduct.minStockLevel
     };
-    
+
     try {
       const response = await productService.updateProduct(currentProduct.id, updatedProduct);
-      
+
       // Update products with the response from server
-      setProducts(products.map(product => 
+      setProducts(products.map(product =>
         product.id === currentProduct.id ? response : product
       ));
-      
+
       // Apply current filters to updated products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(filteredProducts.map(product => 
+        setFilteredProducts(filteredProducts.map(product =>
           product.id === currentProduct.id ? response : product
         ));
       }
-      
+
       setShowEditModal(false);
       setCurrentProduct(null);
       showSuccess('Product updated successfully!');
@@ -362,18 +397,18 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       setIsSubmitting(false);
     }
   };
-  
+
   // Delete product
   const handleDeleteProduct = async () => {
     setIsLoading(true);
-    
+
     try {
       await productService.deleteProduct(currentProduct.id);
-      
+
       // Update products
       const updatedProducts = products.filter(product => product.id !== currentProduct.id);
       setProducts(updatedProducts);
-      
+
       // Apply current filters to updated products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
@@ -382,7 +417,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         // If no active filters, update filtered products directly
         setFilteredProducts(filteredProducts.filter(product => product.id !== currentProduct.id));
       }
-      
+
       setShowDeleteModal(false);
       setCurrentProduct(null);
       showSuccess('Product deleted successfully!');
@@ -393,37 +428,37 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       setIsLoading(false);
     }
   };
-  
+
   // Update product stock quantity
   const handleUpdateStock = async (productId, adjustmentAmount) => {
     if (!adjustmentAmount) return;
-    
+
     try {
       const response = await productService.updateStock(productId, { adjustment: adjustmentAmount });
-      
+
       // Update products with the response from server
-      setProducts(products.map(product => 
+      setProducts(products.map(product =>
         product.id === productId ? response : product
       ));
-      
+
       // Apply current filters to updated products list
       if (searchQuery || Object.keys(searchFilters).length > 0) {
         // Re-apply current search
         handleSearch(typeof searchQuery === 'string' ? searchQuery : { searchTerm: searchQuery, filters: searchFilters });
       } else {
         // If no active filters, update filtered products directly
-        setFilteredProducts(filteredProducts.map(product => 
+        setFilteredProducts(filteredProducts.map(product =>
           product.id === productId ? response : product
         ));
       }
-      
+
       showSuccess(`Stock updated successfully! Adjustment: ${adjustmentAmount > 0 ? '+' : ''}${adjustmentAmount}`);
     } catch (err) {
       showError(err.message || 'Failed to update stock. Please try again.');
       console.error('Update stock error:', err);
     }
   };
-  
+
   // Handle export data
   const handleExportData = () => {
     try {
@@ -434,14 +469,14 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       console.error('Export error:', err);
     }
   };
-  
+
   // Handle barcode scan
   const handleBarcodeScan = (barcode) => {
     showSuccess(`Barcode scanned: ${barcode}`);
-    
+
     // Find product by SKU (simulating barcode = SKU for this demo)
     const found = products.find(p => p.sku === barcode);
-    
+
     if (found) {
       setCurrentProduct(found);
       setShowBarcodeScanner(false);
@@ -456,7 +491,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       setShowAddModal(true);
     }
   };
-  
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
@@ -466,22 +501,15 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       }
     };
   }, []);
-  
-  // Available product categories
-  const categories = [
-    { value: 'Electronics', label: 'Electronics' },
-    { value: 'Furniture', label: 'Furniture' },
-    { value: 'Home', label: 'Home' },
-    { value: 'Office Supplies', label: 'Office Supplies' },
-    { value: 'Accessories', label: 'Accessories' }
-  ];
-  
+
+  // Available product categories - Loaded from API now
+
   // Filter parameters for search
   const searchFilterOptions = [
-    { 
-      id: 'category', 
-      label: 'Category', 
-      type: 'select', 
+    {
+      id: 'category',
+      label: 'Category',
+      type: 'select',
       options: [
         { value: '', label: 'All Categories' },
         ...categories
@@ -515,39 +543,39 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
       defaultValue: 'name'
     }
   ];
-  
+
   // Breadcrumbs data
   const breadcrumbsItems = [
     { label: 'Dashboard', path: isAdmin ? 'adminDashboard' : 'userDashboard' },
     { label: 'Inventory Management', path: 'inventory' }
   ];
-  
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      <Sidebar 
-        isAdmin={isAdmin} 
-        activePage="inventory" 
-        onNavigate={onNavigate} 
+      <Sidebar
+        isAdmin={isAdmin}
+        activePage="inventory"
+        onNavigate={onNavigate}
         onLogout={onLogout}
         profileImage={profileImage}
       />
-      
+
       <div className="flex-1 p-6 bg-gray-50">
         <Breadcrumbs items={breadcrumbsItems} onNavigate={onNavigate} />
-        
+
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
           <h2 className="text-2xl font-bold">Inventory Management</h2>
-          
+
           <div className="flex flex-col sm:flex-row gap-2">
-            <button 
+            <button
               className="bg-blue-600 text-white px-4 py-2 rounded flex items-center justify-center"
               onClick={initializeAddForm}
             >
               <Plus className="w-5 h-5 mr-1" />
               <span>Add Product</span>
             </button>
-            
-            <button 
+
+            <button
               className="bg-purple-600 text-white px-4 py-2 rounded flex items-center justify-center"
               onClick={() => setShowBarcodeScanner(true)}
             >
@@ -556,25 +584,33 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               </svg>
               <span>Scan Barcode</span>
             </button>
+
+            <button
+              className="bg-green-600 text-white px-4 py-2 rounded flex items-center justify-center"
+              onClick={() => setShowAddCategoryModal(true)}
+            >
+              <Plus className="w-5 h-5 mr-1" />
+              <span>Add Category</span>
+            </button>
           </div>
         </div>
-        
+
         {/* Search and filters */}
         <div className="bg-white p-4 rounded shadow mb-4">
-          <SearchBar 
+          <SearchBar
             placeholder="Search products by name, SKU, or category..."
             onSearch={handleSearch}
             advancedSearch={true}
             filters={searchFilterOptions}
             className="mb-2"
           />
-          
+
           <div className="flex justify-between items-center mt-4">
             <p className="text-sm text-gray-600">
               Showing {filteredProducts.length} of {products.length} products
             </p>
-            
-            <button 
+
+            <button
               className="text-blue-600 text-sm hover:underline flex items-center"
               onClick={handleExportData}
             >
@@ -585,7 +621,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
             </button>
           </div>
         </div>
-        
+
         {/* Products grid */}
         <div className="bg-white p-4 rounded shadow">
           {isLoading ? (
@@ -593,21 +629,11 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               <ComponentLoader size="large" text="Loading products..." />
             </div>
           ) : filteredProducts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredProducts.map(product => (
-                <InventoryItem 
-                  key={product.id || product._id}
-                  item={{
-                    id: product.id || product._id,
-                    name: product.name,
-                    sku: product.sku,
-                    price: parseFloat(product.price),
-                    costPrice: parseFloat(product.cost_price || product.costPrice || 0),
-                    quantity: parseInt(product.quantity),
-                    category: product.category,
-                    description: product.description,
-                    minStockLevel: parseInt(product.min_stock_level || product.minStockLevel || 5)
-                  }}
+                <InventoryItem
+                  key={product.id}
+                  item={product}
                   isAdmin={isAdmin}
                   onEdit={() => initializeEditForm({
                     ...product,
@@ -627,7 +653,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
               <p className="mt-2 text-gray-500">No products found</p>
-              <button 
+              <button
                 className="mt-4 bg-blue-600 text-white px-4 py-2 rounded inline-flex items-center"
                 onClick={initializeAddForm}
               >
@@ -636,7 +662,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               </button>
             </div>
           )}
-          
+
           {filteredProducts.length > 0 && (
             <div className="mt-6 flex justify-between items-center">
               <div>
@@ -653,15 +679,15 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
           )}
         </div>
       </div>
-      
+
       {/* Add Product Modal */}
-      <Modal 
-        isOpen={showAddModal} 
+      <Modal
+        isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         title="Add New Product"
       >
-        <Form 
-          onSubmit={handleAddProduct} 
+        <Form
+          onSubmit={handleAddProduct}
           resetButton={true}
           isSubmitting={isSubmitting}
         >
@@ -686,13 +712,13 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               helpText="Unique product identifier"
             />
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Selling Price"
               id="price"
               name="price"
-              type="text" 
+              type="text"
               value={productForm.price}
               onChange={handleInputChange}
               error={formErrors.price}
@@ -704,7 +730,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
                 label="Cost Price"
                 id="costPrice"
                 name="costPrice"
-                type="text" 
+                type="text"
                 value={productForm.costPrice}
                 onChange={handleInputChange}
                 error={formErrors.costPrice}
@@ -713,7 +739,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               />
             )}
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Quantity"
@@ -737,7 +763,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               required
             />
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Min Stock Level"
@@ -750,7 +776,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               helpText="Whole numbers only (e.g., 10)"
             />
           </FormRow>
-          
+
           <FormTextarea
             label="Description"
             id="description"
@@ -762,15 +788,49 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
           />
         </Form>
       </Modal>
-      
+
+      {/* Add Category Modal */}
+      < Modal
+        isOpen={showAddCategoryModal}
+        onClose={() => setShowAddCategoryModal(false)}
+        title="Add New Category"
+      >
+        <Form
+          onSubmit={handleAddCategory}
+          resetButton={false}
+          isSubmitting={isSubmitting}
+          submitText="Create Category"
+        >
+          <FormRow>
+            <FormInput
+              label="Category Name"
+              id="cat-name"
+              name="name"
+              value={categoryForm.name}
+              onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+              required
+            />
+          </FormRow>
+          <FormRow>
+            <FormInput
+              label="Description"
+              id="cat-desc"
+              name="description"
+              value={categoryForm.description}
+              onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+            />
+          </FormRow>
+        </Form>
+      </Modal >
+
       {/* Edit Product Modal */}
-      <Modal 
-        isOpen={showEditModal} 
+      < Modal
+        isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
         title="Edit Product"
       >
-        <Form 
-          onSubmit={handleEditProduct} 
+        <Form
+          onSubmit={handleEditProduct}
           resetButton={false}
           isSubmitting={isSubmitting}
           submitText="Update Product"
@@ -796,7 +856,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               helpText="Unique product identifier"
             />
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Selling Price"
@@ -823,7 +883,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               />
             )}
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Quantity"
@@ -847,7 +907,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               required
             />
           </FormRow>
-          
+
           <FormRow>
             <FormInput
               label="Min Stock Level"
@@ -860,7 +920,7 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
               helpText="Whole numbers only (e.g., 10)"
             />
           </FormRow>
-          
+
           <FormTextarea
             label="Description"
             id="edit-description"
@@ -871,10 +931,10 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
             rows={3}
           />
         </Form>
-      </Modal>
-      
+      </Modal >
+
       {/* Delete Confirmation Dialog */}
-      <ConfirmationDialog
+      < ConfirmationDialog
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteProduct}
@@ -883,15 +943,17 @@ const InventoryPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileU
         confirmText="Delete"
         type="danger"
       />
-      
+
       {/* Barcode Scanner Modal */}
-      {showBarcodeScanner && (
-        <BarcodeScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setShowBarcodeScanner(false)}
-        />
-      )}
-    </div>
+      {
+        showBarcodeScanner && (
+          <BarcodeScanner
+            onScan={handleBarcodeScan}
+            onClose={() => setShowBarcodeScanner(false)}
+          />
+        )
+      }
+    </div >
   );
 };
 

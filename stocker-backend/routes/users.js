@@ -8,8 +8,8 @@ const admin = require('../middleware/admin');
 
 // Debug middleware
 router.use((req, res, next) => {
-  console.log(`[USERS ROUTE] ${req.method} ${req.path}`);
-  next();
+    console.log(`[USERS ROUTE] ${req.method} ${req.path}`);
+    next();
 });
 
 /**
@@ -20,7 +20,7 @@ router.use((req, res, next) => {
 router.get('/', [auth, admin], async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, username, email, role, first_name, last_name, status, last_login, created_at FROM users ORDER BY created_at DESC'
         );
         res.json(result.rows);
     } catch (err) {
@@ -50,11 +50,11 @@ router.post('/', [
     }
 
     try {
-        const { username, email, password, role } = req.body;
+        const { username, email, password, role, firstName, lastName, status } = req.body;
 
         // Check if user exists
         const userExists = await pool.query(
-            'SELECT * FROM users WHERE username = $1 OR email = $2',
+            'SELECT * FROM users WHERE username = ? OR email = ?',
             [username, email]
         );
 
@@ -68,11 +68,16 @@ router.post('/', [
 
         // Create user
         const result = await pool.query(
-            'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, username, email, role, created_at',
-            [username, email, hashedPassword, role]
+            'INSERT INTO users (username, email, password, role, first_name, last_name, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [username, email, hashedPassword, role, firstName, lastName, status || 'active']
         );
 
-        res.status(201).json(result.rows[0]);
+        const newUser = await pool.query(
+            'SELECT id, username, email, role, first_name, last_name, status, created_at FROM users WHERE id = ?',
+            [result.insertId]
+        );
+
+        res.status(201).json(newUser.rows[0]);
     } catch (err) {
         console.error('Error creating user:', err);
         res.status(500).json({ error: 'Server error' });
@@ -86,7 +91,6 @@ router.post('/', [
  */
 router.put('/:id', [
     auth,
-    admin,
     [
         check('email', 'Please include a valid email').optional().isEmail(),
         check('role', 'Role must be either admin or user').optional().isIn(['admin', 'user'])
@@ -98,12 +102,21 @@ router.put('/:id', [
     }
 
     try {
-        const { email, password, role } = req.body;
+        const { email, password, role, firstName, lastName, status } = req.body;
         const userId = req.params.id;
+
+        // Permission check: Admin can update anyone, User can only update themselves
+        if (req.user.role !== 'admin' && String(req.user.id) !== String(userId)) {
+            return res.status(403).json({ error: 'Access denied. You can only update your own profile.' });
+        }
+
+        // If not admin, ensure role and status are not processed even if sent
+        const safeRole = req.user.role === 'admin' ? role : undefined;
+        const safeStatus = req.user.role === 'admin' ? status : undefined;
 
         // Check if user exists
         const userExists = await pool.query(
-            'SELECT * FROM users WHERE id = $1',
+            'SELECT * FROM users WHERE id = ?',
             [userId]
         );
 
@@ -114,38 +127,91 @@ router.put('/:id', [
         // Build update query
         let updateQuery = 'UPDATE users SET ';
         const updateValues = [];
-        let valueCounter = 1;
+
+        if (username) {
+            // Check if username is taken by another user
+            const usernameExists = await pool.query(
+                'SELECT id FROM users WHERE username = ? AND id != ?',
+                [username, userId]
+            );
+
+            if (usernameExists.rows.length > 0) {
+                return res.status(400).json({ error: 'Username is already taken' });
+            }
+
+            updateQuery += `username = ?, `;
+            updateValues.push(username);
+        }
 
         if (email) {
-            updateQuery += `email = $${valueCounter}, `;
+            // Check if email is taken by another user
+            const emailExists = await pool.query(
+                'SELECT id FROM users WHERE email = ? AND id != ?',
+                [email, userId]
+            );
+
+            if (emailExists.rows.length > 0) {
+                return res.status(400).json({ error: 'Email is already taken' });
+            }
+
+            updateQuery += `email = ?, `;
             updateValues.push(email);
-            valueCounter++;
         }
 
         if (password) {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
-            updateQuery += `password = $${valueCounter}, `;
+            updateQuery += `password = ?, `;
             updateValues.push(hashedPassword);
-            valueCounter++;
         }
 
-        if (role) {
-            updateQuery += `role = $${valueCounter}, `;
-            updateValues.push(role);
-            valueCounter++;
+        if (safeRole) {
+            updateQuery += `role = ?, `;
+            updateValues.push(safeRole);
+        }
+
+        if (firstName !== undefined) {
+            updateQuery += `first_name = ?, `;
+            updateValues.push(firstName);
+        }
+
+        if (lastName !== undefined) {
+            updateQuery += `last_name = ?, `;
+            updateValues.push(lastName);
+        }
+
+        if (safeStatus) {
+            updateQuery += `status = ?, `;
+            updateValues.push(safeStatus);
         }
 
         // Remove trailing comma and space
+        if (updateValues.length === 0) {
+            return res.json(userExists.rows[0]);
+        }
+
         updateQuery = updateQuery.slice(0, -2);
-        updateQuery += ` WHERE id = $${valueCounter} RETURNING id, username, email, role, created_at`;
+        updateQuery += ` WHERE id = ?`;
         updateValues.push(userId);
 
-        const result = await pool.query(updateQuery, updateValues);
-        res.json(result.rows[0]);
+        // Execute update
+        await pool.query(updateQuery, updateValues);
+
+        // Fetch updated user
+        const updatedUser = await pool.query(
+            'SELECT id, username, email, role, first_name, last_name, status, created_at FROM users WHERE id = ?',
+            [userId]
+        );
+        res.json(updatedUser.rows[0]);
     } catch (err) {
         console.error('Error updating user:', err);
-        res.status(500).json({ error: 'Server error' });
+        console.error('Update Query:', updateQuery || 'Not built');
+        console.error('Update Values:', updateValues || 'Not built');
+        res.status(500).json({
+            error: 'Server error',
+            details: err.message,
+            sqlMessage: err.sqlMessage || undefined
+        });
     }
 });
 
@@ -165,7 +231,7 @@ router.delete('/:id', [auth, admin], async (req, res) => {
 
         // Check if user exists
         const userExists = await pool.query(
-            'SELECT * FROM users WHERE id = $1',
+            'SELECT * FROM users WHERE id = ?',
             [userId]
         );
 
@@ -174,7 +240,7 @@ router.delete('/:id', [auth, admin], async (req, res) => {
         }
 
         // Delete user
-        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        await pool.query('DELETE FROM users WHERE id = ?', [userId]);
         res.json({ message: 'User deleted successfully' });
     } catch (err) {
         console.error('Error deleting user:', err);

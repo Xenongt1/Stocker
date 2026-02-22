@@ -7,165 +7,176 @@ import { exportAsCSV } from '../utils/dataImportExport';
 import { ComponentLoader } from '../components/LoadingState';
 import ProfilePicture from '../components/ProfilePicture';
 
+import { salesService, productService } from '../services/api';
+
+import { useCurrency } from '../hooks/useCurrency';
+
 const ReportsPage = ({ isAdmin, onNavigate, onLogout, profileImage, onProfileUpdate }) => {
   const [reportType, setReportType] = useState('sales');
+  const { currency, formatCurrency } = useCurrency();
+
+  // Set default date range to current month
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+
   const [dateRange, setDateRange] = useState({
-    start: '2025-04-01',
-    end: '2025-04-12'
+    start: firstDay.toISOString().split('T')[0],
+    end: today.toISOString().split('T')[0]
   });
 
   // Loading and report states
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
+  const [isLiveMode, setIsLiveMode] = useState(false); // Live mode state
 
   // Get notification functions
   const { success, error: showError } = useNotification();
 
-// Create a utility function to properly format dates for CSV export
-function formatDateForCSV(dateString) {
-  // Format date as DD/MM/YYYY which Excel typically recognizes as a date
-  const date = new Date(dateString);
-  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-}
+  // Create a utility function to properly format dates for CSV export
+  function formatDateForCSV(dateString) {
+    // Format date as DD/MM/YYYY which Excel typically recognizes as a date
+    const date = new Date(dateString);
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+  }
 
+  const [updateSuccess, setUpdateSuccess] = useState(false);
 
-  // Sample data for sales report
-  const salesData = [
-    { date: '2025-04-01', amount: 1250.45 },
-    { date: '2025-04-02', amount: 980.20 },
-    { date: '2025-04-03', amount: 1578.99 },
-    { date: '2025-04-04', amount: 890.50 },
-    { date: '2025-04-05', amount: 2100.75 },
-    { date: '2025-04-06', amount: 760.30 },
-    { date: '2025-04-07', amount: 1340.15 },
-    { date: '2025-04-08', amount: 1670.60 },
-    { date: '2025-04-09', amount: 990.25 },
-    { date: '2025-04-10', amount: 1430.80 },
-    { date: '2025-04-11', amount: 1890.40 },
-    { date: '2025-04-12', amount: 1570.50 },
-  ];
+  const handleProfileImageChange = (newImage) => {
+    // Call the parent handler to update the profile image in App.js
+    if (onProfileUpdate) {
+      onProfileUpdate(newImage);
 
-  // Sample data for product performance
-  const productPerformance = [
-    { product: 'Laptop', quantity: 15, amount: 14999.85, profit: 3749.85 },
-    { product: 'Headphones', quantity: 28, amount: 1679.72, profit: 699.72 },
-    { product: 'Office Chair', quantity: 12, amount: 1799.88, profit: 599.88 },
-    { product: 'Desk Lamp', quantity: 20, amount: 599.80, profit: 299.80 },
-    { product: 'Wireless Mouse', quantity: 35, amount: 874.65, profit: 454.65 },
-  ];
-
-  // Sample data for inventory report
-  const inventoryData = [
-    { product: 'Laptop', currentStock: 15, minStockLevel: 10, status: 'OK', lastRestock: '2025-04-05', avgMonthlySales: 12 },
-    { product: 'Headphones', currentStock: 30, minStockLevel: 15, status: 'OK', lastRestock: '2025-04-02', avgMonthlySales: 25 },
-    { product: 'Office Chair', currentStock: 8, minStockLevel: 10, status: 'LOW', lastRestock: '2025-03-28', avgMonthlySales: 12 },
-    { product: 'Desk Lamp', currentStock: 5, minStockLevel: 5, status: 'CRITICAL', lastRestock: '2025-03-25', avgMonthlySales: 8 },
-    { product: 'Wireless Mouse', currentStock: 3, minStockLevel: 8, status: 'CRITICAL', lastRestock: '2025-03-22', avgMonthlySales: 15 },
-  ];
-
-  // Sample data for profit report
-  const profitData = [
-    { product: 'Laptop', qtySold: 15, revenue: 14999.85, cost: 11250.00, profit: 3749.85, margin: '25.0%' },
-    { product: 'Headphones', qtySold: 28, revenue: 1679.72, cost: 980.00, profit: 699.72, margin: '41.7%' },
-    { product: 'Office Chair', qtySold: 12, revenue: 1799.88, cost: 1200.00, profit: 599.88, margin: '33.3%' },
-    { product: 'Desk Lamp', qtySold: 20, revenue: 599.80, cost: 300.00, profit: 299.80, margin: '50.0%' },
-    { product: 'Wireless Mouse', qtySold: 35, revenue: 874.65, cost: 420.00, profit: 454.65, margin: '52.0%' },
-  ];
-
-const [updateSuccess, setUpdateSuccess] = useState(false);
-
-    const handleProfileImageChange = (newImage) => {
-      // Call the parent handler to update the profile image in App.js
-      if (onProfileUpdate) {
-        onProfileUpdate(newImage);
-        
-        // Show success message briefly
-        setUpdateSuccess(true);
-        setTimeout(() => {
-          setUpdateSuccess(false);
-        }, 3000);
-      }
-    };
-    
-
-    const handleSaveSettings = () => {
-      // In a real application, you would save these settings to a database
-      // For now, just show a success message
+      // Show success message briefly
       setUpdateSuccess(true);
       setTimeout(() => {
         setUpdateSuccess(false);
       }, 3000);
-    };
+    }
+  };
+
+
+  const handleSaveSettings = () => {
+    // In a real application, you would save these settings to a database
+    // For now, just show a success message
+    setUpdateSuccess(true);
+    setTimeout(() => {
+      setUpdateSuccess(false);
+    }, 3000);
+  };
 
 
   // Function to generate report based on current filters
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     setIsLoading(true);
-    
-    // Simulate API call with timeout
-    setTimeout(() => {
-      let filteredData;
-      
-      // Filter data based on date range
-      const startDate = new Date(dateRange.start);
-      const endDate = new Date(dateRange.end);
-      
-      switch (reportType) {
-        case 'sales':
-          filteredData = salesData.filter(item => {
-            const itemDate = new Date(item.date);
-            return itemDate >= startDate && itemDate <= endDate;
-          });
-          break;
-        case 'inventory':
-          filteredData = inventoryData;
-          break;
-        case 'products':
-          filteredData = productPerformance;
-          break;
-        case 'profit':
-          filteredData = profitData;
-          break;
-        default:
-          filteredData = [];
+
+    try {
+      let data = [];
+      const { start, end } = dateRange;
+
+      if (reportType === 'sales') {
+        // Fetch daily sales chart data
+        data = await salesService.getSalesChart('daily', start, end);
+        // Map to match component expectations
+        data = data.map(item => ({
+          date: item.date,
+          amount: item.amount,
+          count: item.count,
+          profit: item.profit
+        }));
+      } else if (reportType === 'inventory') {
+        // Fetch all products for inventory status
+        const products = await productService.getAllProducts();
+        data = products.map(p => ({
+          product: p.name,
+          currentStock: p.quantity,
+          minStockLevel: p.minStockLevel || 10,
+          status: p.quantity <= 0 ? 'CRITICAL' : p.quantity <= (p.minStockLevel || 10) ? 'LOW' : 'OK',
+          lastRestock: p.updated_at ? new Date(p.updated_at).toISOString().split('T')[0] : 'N/A',
+          avgMonthlySales: 0 // We'd need more complex logic for this, defaulting to 0 for now
+        }));
+      } else if (reportType === 'products' || reportType === 'profit') {
+        // Fetch product performance stats
+        data = await salesService.getProductPerformance(start, end);
+        // data already has product, quantity, amount, profit
+        data = data.map(item => ({
+          product: item.product,
+          quantity: item.quantity,
+          amount: item.amount,
+          profit: item.profit,
+          // Calculate margins etc if needed
+          cost: item.amount - item.profit,
+          margin: item.amount > 0 ? ((item.profit / item.amount) * 100).toFixed(1) + '%' : '0%',
+          qtySold: item.quantity, // alias for profit report
+          revenue: item.amount // alias for profit report
+        }));
       }
-      
+
       setReportData({
         type: reportType,
         dateRange: { ...dateRange },
-        data: filteredData
+        data: data
       });
-      
-      setIsLoading(false);
+
       success('Report generated successfully!');
-    }, 800);
+    } catch (err) {
+      console.error('Error generating report:', err);
+      showError(err.message || 'Failed to generate report');
+      setReportData({
+        type: reportType,
+        dateRange: { ...dateRange },
+        data: []
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
-  
+
   // Load initial report data on component mount
   // Add this instead
-useEffect(() => {
-  // Initialize with empty data or just set loading to false
-  setIsLoading(false);
-  
-  // Optional: Set initial empty report data
-  setReportData({
-    type: reportType,
-    dateRange: { ...dateRange },
-    data: [] // Empty data array
-  });
-}, []);
-  
+  useEffect(() => {
+    // Initialize with empty data or just set loading to false
+    setIsLoading(false);
+
+    // Optional: Set initial empty report data
+    setReportData({
+      type: reportType,
+      dateRange: { ...dateRange },
+      data: [] // Empty data array
+    });
+  }, []);
+
+  // Live mode polling effect
+  useEffect(() => {
+    let intervalId;
+
+    if (isLiveMode) {
+      // Generate report immediately when switching to live mode
+      handleGenerateReport();
+
+      // Set up polling interval (every 30 seconds)
+      intervalId = setInterval(() => {
+        handleGenerateReport();
+      }, 30000);
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isLiveMode, reportType, dateRange]); // Re-run if dependencies change while in live mode
+
   // Function to export report data as CSV
   const handleExportCSV = () => {
     if (!reportData || !reportData.data?.length) {
       showError('No data available to export');
       return;
     }
-    
+
     try {
       let filename;
       let formattedData = [...reportData.data];
-      
+
       // Format date fields based on report type
       if (reportData.type === 'sales') {
         formattedData = formattedData.map(item => ({
@@ -194,7 +205,7 @@ useEffect(() => {
         default:
           filename = 'report.csv';
       }
-      
+
       exportAsCSV(formattedData, filename);
       success(`Report exported successfully as ${filename}`);
     } catch (err) {
@@ -202,21 +213,21 @@ useEffect(() => {
       console.error('Export error:', err);
     }
   };
-  
+
   // Function to print report
   const handlePrint = () => {
     if (!reportData || !reportData.data?.length) {
       showError('No data available to print');
       return;
     }
-    
+
     try {
       // Store current document title
       const originalTitle = document.title;
-      
+
       // Set new title for the print
       let reportTitle;
-      
+
       switch (reportData.type) {
         case 'sales':
           reportTitle = `Sales Report (${reportData.dateRange.start} to ${reportData.dateRange.end})`;
@@ -233,12 +244,12 @@ useEffect(() => {
         default:
           reportTitle = 'Report';
       }
-      
+
       document.title = reportTitle;
-      
+
       // Create a window for printing
       const printWindow = window.open('', '_blank');
-      
+
       // Create print styles
       const styles = `
         <style>
@@ -302,19 +313,25 @@ useEffect(() => {
           }
         </style>
       `;
-      
+
       // Generate the content based on report type
       let content = '';
-      
+
       if (reportType === 'sales') {
+        const totalSales = reportData.data.reduce((sum, item) => sum + item.amount, 0);
+        const avgDaily = reportData.data.length ? totalSales / reportData.data.length : 0;
+        const highestDay = reportData.data.length ? Math.max(...reportData.data.map(item => item.amount)) : 0;
+        const totalTransactions = reportData.data.reduce((sum, item) => sum + item.count, 0);
+
         content = `
           <h1>Sales Report</h1>
           <div class="report-date">Period: ${reportData.dateRange.start} to ${reportData.dateRange.end}</div>
           
           <div class="summary">
-            <div class="summary-item"><strong>Total Sales:</strong> $${reportData.data.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</div>
-            <div class="summary-item"><strong>Average Daily:</strong> $${(reportData.data.reduce((sum, item) => sum + item.amount, 0) / reportData.data.length).toFixed(2)}</div>
-            <div class="summary-item"><strong>Highest Day:</strong> $${Math.max(...reportData.data.map(item => item.amount)).toFixed(2)}</div>
+            <div className="summary-item"><strong>Total Sales:</strong> {formatCurrency(totalSales)}</div>
+            <div className="summary-item"><strong>Average Daily:</strong> {formatCurrency(avgDaily)}</div>
+            <div className="summary-item"><strong>Highest Day:</strong> {formatCurrency(highestDay)}</div>
+            <div className="summary-item"><strong>Transactions:</strong> ${totalTransactions}</div>
           </div>
           
           <table>
@@ -322,19 +339,17 @@ useEffect(() => {
               <tr>
                 <th>Date</th>
                 <th>Transactions</th>
-                <th>Items Sold</th>
                 <th>Total Amount</th>
                 ${isAdmin ? '<th>Profit</th>' : ''}
               </tr>
             </thead>
             <tbody>
-              ${reportData.data.map((day, index) => `
+              ${reportData.data.map(day => `
                 <tr>
                   <td>${day.date}</td>
-                  <td>${Math.floor(Math.random() * 15) + 2}</td>
-                  <td>${Math.floor(Math.random() * 30) + 5}</td>
-                  <td>$${day.amount.toFixed(2)}</td>
-                  ${isAdmin ? `<td>$${(day.amount * 0.3).toFixed(2)}</td>` : ''}
+                  <td>${day.count}</td>
+                  <td>{formatCurrency(day.amount)}</td>
+                  ${isAdmin ? `<td>${formatCurrency(day.profit)}</td>` : ''}
                 </tr>
               `).join('')}
             </tbody>
@@ -353,7 +368,6 @@ useEffect(() => {
                 <th>Min Stock Level</th>
                 <th>Status</th>
                 <th>Last Restock</th>
-                <th>Avg. Monthly Sales</th>
               </tr>
             </thead>
             <tbody>
@@ -364,13 +378,14 @@ useEffect(() => {
                   <td>${item.minStockLevel}</td>
                   <td><span class="status status-${item.status.toLowerCase()}">${item.status}</span></td>
                   <td>${item.lastRestock}</td>
-                  <td>${item.avgMonthlySales}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `;
       } else if (reportType === 'products') {
+        const totalSales = reportData.data.reduce((sum, p) => sum + p.amount, 0);
+
         content = `
           <h1>Product Performance Report</h1>
           <div class="report-date">Generated on: ${new Date().toLocaleDateString()}</div>
@@ -390,24 +405,29 @@ useEffect(() => {
                 <tr>
                   <td>${product.product}</td>
                   <td>${product.quantity}</td>
-                  <td>$${product.amount.toFixed(2)}</td>
-                  ${isAdmin ? `<td>$${product.profit.toFixed(2)}</td>` : ''}
-                  <td>${(product.amount / reportData.data.reduce((sum, p) => sum + p.amount, 0) * 100).toFixed(1)}%</td>
+                  <td>{formatCurrency(product.amount)}</td>
+                  ${isAdmin ? `<td>${formatCurrency(product.profit)}</td>` : ''}
+                  <td>${totalSales > 0 ? (product.amount / totalSales * 100).toFixed(1) : 0}%</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `;
       } else if (reportType === 'profit' && isAdmin) {
+        const totalRevenue = reportData.data.reduce((sum, item) => sum + item.amount, 0);
+        const totalCost = reportData.data.reduce((sum, item) => sum + (item.cost || 0), 0);
+        const totalProfit = reportData.data.reduce((sum, item) => sum + item.profit, 0);
+        const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
         content = `
           <h1>Profit Analysis Report</h1>
           <div class="report-date">Generated on: ${new Date().toLocaleDateString()}</div>
           
           <div class="summary">
-            <div class="summary-item"><strong>Total Revenue:</strong> $19,954.90</div>
-            <div class="summary-item"><strong>Total Cost:</strong> $14,150.00</div>
-            <div class="summary-item"><strong>Gross Profit:</strong> $5,804.90</div>
-            <div class="summary-item"><strong>Margin:</strong> 29.1%</div>
+            <div className="summary-item"><strong>Total Revenue:</strong> {formatCurrency(totalRevenue)}</div>
+            <div className="summary-item"><strong>Total Cost:</strong> {formatCurrency(totalCost)}</div>
+            <div className="summary-item"><strong>Gross Profit:</strong> {formatCurrency(totalProfit)}</div>
+            <div className="summary-item"><strong>Margin:</strong> ${margin.toFixed(1)}%</div>
           </div>
           
           <table>
@@ -425,10 +445,10 @@ useEffect(() => {
               ${reportData.data.map(product => `
                 <tr>
                   <td>${product.product}</td>
-                  <td>${product.qtySold}</td>
-                  <td>$${product.revenue.toFixed(2)}</td>
-                  <td>$${product.cost.toFixed(2)}</td>
-                  <td>$${product.profit.toFixed(2)}</td>
+                  <td>${product.quantity}</td>
+                  <td>{formatCurrency(product.amount)}</td>
+                  <td>{formatCurrency(product.cost || 0)}</td>
+                  <td>{formatCurrency(product.profit)}</td>
                   <td>${product.margin}</td>
                 </tr>
               `).join('')}
@@ -436,17 +456,17 @@ useEffect(() => {
             <tfoot>
               <tr>
                 <td><strong>Total</strong></td>
-                <td><strong>110</strong></td>
-                <td><strong>$19,953.90</strong></td>
-                <td><strong>$14,150.00</strong></td>
-                <td><strong>$5,803.90</strong></td>
-                <td><strong>29.1%</strong></td>
+                <td><strong>${reportData.data.reduce((sum, item) => sum + item.quantity, 0)}</strong></td>
+                <td><strong>{formatCurrency(totalRevenue)}</strong></td>
+                <td><strong>{formatCurrency(totalCost)}</strong></td>
+                <td><strong>{formatCurrency(totalProfit)}</strong></td>
+                <td><strong>${margin.toFixed(1)}%</strong></td>
               </tr>
             </tfoot>
           </table>
         `;
       }
-      
+
       printWindow.document.write(`
         <html>
           <head>
@@ -462,75 +482,73 @@ useEffect(() => {
           </body>
         </html>
       `);
-      
+
       printWindow.document.close();
-      
+
       // Focus on the new window and print
       printWindow.focus();
       setTimeout(() => {
         printWindow.print();
         document.title = originalTitle;
       }, 500);
-      
+
       success('Report sent to printer');
     } catch (err) {
       showError('Failed to print report. Please try again.');
       console.error('Print error:', err);
     }
   };
-  
+
   // Chart rendering functions
   const renderSalesChart = () => {
+    if (!reportData?.data) return null;
     const data = {
-      labels: salesData.map(item => item.date),
+      labels: reportData.data.map(item => item.date),
       datasets: [
         {
           label: 'Sales Amount',
-          data: salesData.map(item => item.amount),
+          data: reportData.data.map(item => item.amount),
           borderColor: 'rgb(53, 162, 235)',
           backgroundColor: 'rgba(53, 162, 235, 0.5)',
         },
       ],
     };
-    
+
     return <ChartComponent type="line" data={data} />;
   };
-  
+
   const renderInventoryChart = () => {
-    const inventoryChartData = [
-      { name: 'Laptop', stock: 15, minimum: 10 },
-      { name: 'Headphones', stock: 30, minimum: 15 },
-      { name: 'Office Chair', stock: 8, minimum: 10 },
-      { name: 'Desk Lamp', stock: 5, minimum: 5 },
-      { name: 'Wireless Mouse', stock: 3, minimum: 8 },
-    ];
-    
+    if (!reportData?.data) return null;
+    // Show top 10 items by stock or all if less
+    const chartItems = reportData.data.slice(0, 10);
+
     const data = {
-      labels: inventoryChartData.map(item => item.name),
+      labels: chartItems.map(item => item.product),
       datasets: [
         {
           label: 'Current Stock',
-          data: inventoryChartData.map(item => item.stock),
+          data: chartItems.map(item => item.currentStock),
           backgroundColor: 'rgba(53, 162, 235, 0.5)',
         },
         {
           label: 'Minimum Level',
-          data: inventoryChartData.map(item => item.minimum),
+          data: chartItems.map(item => item.minStockLevel),
           backgroundColor: 'rgba(255, 99, 132, 0.5)',
         },
       ],
     };
-    
+
     return <ChartComponent type="bar" data={data} />;
   };
-  
+
   const renderProductChart = () => {
+    if (!reportData?.data) return null;
     const data = {
-      labels: productPerformance.map(item => item.product),
+      labels: reportData.data.map(item => item.product),
       datasets: [
         {
           label: 'Sales Amount',
-          data: productPerformance.map(item => item.amount),
+          data: reportData.data.map(item => item.amount),
           backgroundColor: [
             'rgba(255, 99, 132, 0.5)',
             'rgba(54, 162, 235, 0.5)',
@@ -541,50 +559,51 @@ useEffect(() => {
         },
       ],
     };
-    
+
     return <ChartComponent type="pie" data={data} />;
   };
-  
+
   const renderProfitChart = () => {
+    if (!reportData?.data) return null;
     const data = {
-      labels: productPerformance.map(item => item.product),
+      labels: reportData.data.map(item => item.product),
       datasets: [
         {
           label: 'Revenue',
-          data: productPerformance.map(item => item.amount),
+          data: reportData.data.map(item => item.amount),
           backgroundColor: 'rgba(53, 162, 235, 0.5)',
         },
         {
           label: 'Profit',
-          data: productPerformance.map(item => item.profit),
+          data: reportData.data.map(item => item.profit),
           backgroundColor: 'rgba(75, 192, 192, 0.5)',
         },
       ],
     };
-    
+
     return <ChartComponent type="bar" data={data} />;
   };
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-        
-    <Sidebar 
-      isAdmin={isAdmin} 
-      activePage="reports" 
-      onNavigate={onNavigate} 
-      onLogout={onLogout}
-      profileImage={profileImage}
-    />
-      
+
+      <Sidebar
+        isAdmin={isAdmin}
+        activePage="reports"
+        onNavigate={onNavigate}
+        onLogout={onLogout}
+        profileImage={profileImage}
+      />
+
       <div className="flex-1 p-4 pt-16 lg:pt-4 lg:p-6">
         <h2 className="text-xl sm:text-2xl font-bold mb-4">Reports</h2>
-        
+
         {/* Report filters */}
         <div className="bg-white p-4 rounded shadow mb-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
-              <select 
+              <select
                 className="w-full p-2 border rounded"
                 value={reportType}
                 onChange={(e) => setReportType(e.target.value)}
@@ -597,24 +616,24 @@ useEffect(() => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 className="w-full p-2 border rounded"
                 value={dateRange.start}
-                onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 className="w-full p-2 border rounded"
                 value={dateRange.end}
-                onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
               />
             </div>
             <div className="flex items-end">
-              <button 
+              <button
                 className="bg-blue-600 text-white px-4 py-2 rounded w-full flex items-center justify-center"
                 onClick={handleGenerateReport}
                 disabled={isLoading}
@@ -630,9 +649,27 @@ useEffect(() => {
                 ) : 'Generate Report'}
               </button>
             </div>
+
+            {/* Live Mode Toggle */}
+            <div className="flex items-center justify-end md:col-span-2 lg:col-span-4 border-t pt-4 mt-2">
+              <div className="flex items-center space-x-2">
+                <span className={`text-sm font-medium ${isLiveMode ? 'text-green-600' : 'text-gray-600'}`}>
+                  {isLiveMode ? '● Live Updates On (30s)' : 'Live Updates Off'}
+                </span>
+                <button
+                  onClick={() => setIsLiveMode(!isLiveMode)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isLiveMode ? 'bg-green-500' : 'bg-gray-200'}`}
+                >
+                  <span className="sr-only">Enable Live Mode</span>
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isLiveMode ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        
+
         {/* Report visualization */}
         <div className="bg-white p-4 rounded shadow mb-4">
           <h3 className="font-bold mb-4">
@@ -641,7 +678,7 @@ useEffect(() => {
             {reportType === 'products' && 'Product Performance'}
             {reportType === 'profit' && 'Profit Analysis'}
           </h3>
-          
+
           {/* Chart visualization */}
           <div className="h-80 mb-8">
             {reportType === 'sales' && renderSalesChart()}
@@ -649,62 +686,70 @@ useEffect(() => {
             {reportType === 'products' && renderProductChart()}
             {reportType === 'profit' && isAdmin && renderProfitChart()}
           </div>
-          
+
           {/* Report summary */}
-          {reportType === 'sales' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                <h4 className="text-sm text-blue-700">Total Sales</h4>
-                <p className="text-xl font-bold">${salesData.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</p>
-              </div>
-              <div className="bg-green-50 p-3 rounded border border-green-200">
-                <h4 className="text-sm text-green-700">Average Daily</h4>
-                <p className="text-xl font-bold">
-                  ${(salesData.reduce((sum, item) => sum + item.amount, 0) / salesData.length).toFixed(2)}
+          {reportType === 'sales' && reportData?.data && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500">
+                <p className="text-gray-500 text-sm">Total Revenue</p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(reportData.data.reduce((acc, item) => acc + (item.amount || 0), 0))}
                 </p>
               </div>
-              <div className="bg-purple-50 p-3 rounded border border-purple-200">
-                <h4 className="text-sm text-purple-700">Highest Day</h4>
-                <p className="text-xl font-bold">
-                  ${Math.max(...salesData.map(item => item.amount)).toFixed(2)}
+              <div className="bg-white p-4 rounded shadow border-l-4 border-red-500">
+                <p className="text-gray-500 text-sm">Total Cost</p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(reportData.data.reduce((acc, item) => acc + ((item.amount || 0) - (item.profit || 0)), 0))}
                 </p>
               </div>
-              <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
-                <h4 className="text-sm text-yellow-700">Total Transactions</h4>
-                <p className="text-xl font-bold">127</p>
+              <div className="bg-white p-4 rounded shadow border-l-4 border-green-500">
+                <p className="text-gray-500 text-sm">Gross Profit</p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(reportData.data.reduce((acc, item) => acc + (item.profit || 0), 0))}
+                </p>
+              </div>
+              <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500">
+                <p className="text-gray-500 text-sm">Margin</p>
+                <p className="text-2xl font-bold">
+                  {((reportData.data.reduce((acc, item) => acc + (item.profit || 0), 0) / (reportData.data.reduce((acc, item) => acc + (item.amount || 0), 0) || 1)) * 100).toFixed(1)}%
+                </p>
               </div>
             </div>
           )}
-          
-          {reportType === 'profit' && isAdmin && (
+
+          {reportType === 'profit' && isAdmin && reportData?.data && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="bg-green-50 p-3 rounded border border-green-200">
                 <h4 className="text-sm text-green-700">Total Revenue</h4>
-                <p className="text-xl font-bold">$19,954.90</p>
+                <p className="text-xl font-bold">{formatCurrency(reportData.data.reduce((sum, item) => sum + item.amount, 0))}</p>
               </div>
               <div className="bg-blue-50 p-3 rounded border border-blue-200">
                 <h4 className="text-sm text-blue-700">Total Cost</h4>
-                <p className="text-xl font-bold">$14,150.00</p>
+                <p className="text-xl font-bold">{formatCurrency(reportData.data.reduce((sum, item) => sum + (item.cost || 0), 0))}</p>
               </div>
               <div className="bg-indigo-50 p-3 rounded border border-indigo-200">
                 <h4 className="text-sm text-indigo-700">Gross Profit</h4>
-                <p className="text-xl font-bold">$5,804.90</p>
+                <p className="text-xl font-bold">{formatCurrency(reportData.data.reduce((sum, item) => sum + item.profit, 0))}</p>
               </div>
               <div className="bg-purple-50 p-3 rounded border border-purple-200">
                 <h4 className="text-sm text-purple-700">Margin</h4>
-                <p className="text-xl font-bold">29.1%</p>
+                <p className="text-xl font-bold">
+                  {reportData.data.reduce((sum, item) => sum + item.amount, 0) > 0 ?
+                    ((reportData.data.reduce((sum, item) => sum + item.profit, 0) / reportData.data.reduce((sum, item) => sum + item.amount, 0)) * 100).toFixed(1) + '%'
+                    : '0.0%'}
+                </p>
               </div>
             </div>
           )}
         </div>
-        
+
         {/* Report data table */}
         <div className="bg-white p-4 rounded shadow">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
             <h3 className="font-bold">Detailed Data</h3>
-            
+
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              <button 
+              <button
                 className="text-blue-600 hover:underline flex items-center"
                 onClick={handleExportCSV}
               >
@@ -713,8 +758,8 @@ useEffect(() => {
                 </svg>
                 Export CSV
               </button>
-              
-              <button 
+
+              <button
                 className="text-blue-600 hover:underline flex items-center"
                 onClick={handlePrint}
               >
@@ -725,7 +770,7 @@ useEffect(() => {
               </button>
             </div>
           </div>
-          
+
           <div className="overflow-x-auto">
             {isLoading ? (
               <div className="py-12 flex justify-center">
@@ -733,7 +778,7 @@ useEffect(() => {
               </div>
             ) : (
               <>
-                {reportType === 'sales' && (
+                {reportType === 'sales' && reportData?.data && (
                   <table className="w-full">
                     <thead>
                       <tr className="text-left border-b">
@@ -745,20 +790,20 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {salesData.map((day, index) => (
+                      {reportData.data.map((day, index) => (
                         <tr key={index} className="border-b">
                           <td className="py-2">{day.date}</td>
-                          <td className="py-2">{Math.floor(Math.random() * 15) + 2}</td>
-                          <td className="py-2">{Math.floor(Math.random() * 30) + 5}</td>
-                          <td className="py-2">${day.amount.toFixed(2)}</td>
-                          {isAdmin && <td className="py-2">${(day.amount * 0.3).toFixed(2)}</td>}
+                          <td className="py-2">{day.count}</td>
+                          <td className="py-2">N/A</td>
+                          <td className="py-2">{formatCurrency(day.amount)}</td>
+                          {isAdmin && <td className="py-2">{formatCurrency(day.profit)}</td>}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-                
-                {reportType === 'products' && (
+
+                {reportType === 'products' && reportData?.data && (
                   <table className="w-full">
                     <thead>
                       <tr className="text-left border-b">
@@ -770,22 +815,22 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {productPerformance.map((product, index)=> (
+                      {reportData.data.map((product, index) => (
                         <tr key={index} className="border-b">
                           <td className="py-2">{product.product}</td>
                           <td className="py-2">{product.quantity}</td>
-                          <td className="py-2">${product.amount.toFixed(2)}</td>
-                          {isAdmin && <td className="py-2">${product.profit.toFixed(2)}</td>}
+                          <td className="py-2">{formatCurrency(product.amount)}</td>
+                          {isAdmin && <td className="py-2">{formatCurrency(product.profit)}</td>}
                           <td className="py-2">
-                            {(product.amount / productPerformance.reduce((sum, p) => sum + p.amount, 0) * 100).toFixed(1)}%
+                            {product.margin}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-                
-                {reportType === 'inventory' && (
+
+                {reportType === 'inventory' && reportData?.data && (
                   <table className="w-full">
                     <thead>
                       <tr className="text-left border-b">
@@ -794,33 +839,30 @@ useEffect(() => {
                         <th className="pb-2">Min Stock Level</th>
                         <th className="pb-2">Status</th>
                         <th className="pb-2">Last Restock</th>
-                        <th className="pb-2">Avg. Monthly Sales</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {inventoryData.map((item, index) => (
+                      {reportData.data.map((item, index) => (
                         <tr key={index} className="border-b">
                           <td className="py-2">{item.product}</td>
                           <td className="py-2">{item.currentStock}</td>
                           <td className="py-2">{item.minStockLevel}</td>
                           <td className="py-2">
-                            <span className={`px-2 py-1 ${
-                              item.status === 'OK' ? 'bg-green-100 text-green-800' : 
-                              item.status === 'LOW' ? 'bg-yellow-100 text-yellow-800' : 
-                              'bg-red-100 text-red-800'
-                            } rounded-full text-xs`}>
+                            <span className={`px-2 py-1 ${item.status === 'OK' ? 'bg-green-100 text-green-800' :
+                              item.status === 'LOW' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              } rounded-full text-xs`}>
                               {item.status}
                             </span>
                           </td>
                           <td className="py-2">{item.lastRestock}</td>
-                          <td className="py-2">{item.avgMonthlySales}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-                
-                {reportType === 'profit' && isAdmin && (
+
+                {reportType === 'profit' && isAdmin && reportData?.data && (
                   <table className="w-full">
                     <thead>
                       <tr className="text-left border-b">
@@ -833,12 +875,12 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {profitData.map((product, index) => (
+                      {reportData.data.map((product, index) => (
                         <tr key={index} className="border-b">
                           <td className="py-2">{product.product}</td>
-                          <td className="py-2">{product.qtySold}</td>
-                          <td className="py-2">${product.revenue.toFixed(2)}</td>
-                          <td className="py-2">${product.cost.toFixed(2)}</td>
+                          <td className="py-2">{product.quantity}</td>
+                          <td className="py-2">${product.amount.toFixed(2)}</td>
+                          <td className="py-2">${(product.cost || 0).toFixed(2)}</td>
                           <td className="py-2">${product.profit.toFixed(2)}</td>
                           <td className="py-2">{product.margin}</td>
                         </tr>
@@ -847,11 +889,15 @@ useEffect(() => {
                     <tfoot>
                       <tr className="font-bold bg-gray-50">
                         <td className="py-2">Total</td>
-                        <td className="py-2">110</td>
-                        <td className="py-2">$19,953.90</td>
-                        <td className="py-2">$14,150.00</td>
-                        <td className="py-2">$5,803.90</td>
-                        <td className="py-2">29.1%</td>
+                        <td className="py-2">{reportData.data.reduce((sum, item) => sum + item.quantity, 0)}</td>
+                        <td className="py-2">${reportData.data.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</td>
+                        <td className="py-2">${reportData.data.reduce((sum, item) => sum + (item.cost || 0), 0).toFixed(2)}</td>
+                        <td className="py-2">${reportData.data.reduce((sum, item) => sum + item.profit, 0).toFixed(2)}</td>
+                        <td className="py-2">
+                          {reportData.data.reduce((sum, item) => sum + item.amount, 0) > 0 ?
+                            ((reportData.data.reduce((sum, item) => sum + item.profit, 0) / reportData.data.reduce((sum, item) => sum + item.amount, 0)) * 100).toFixed(1) + '%'
+                            : '0.0%'}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>

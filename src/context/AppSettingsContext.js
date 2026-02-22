@@ -16,34 +16,65 @@ export const AppSettingsProvider = ({ children }) => {
     lowStockThreshold: 5,
     receiptFooter: 'Thank you for your purchase!',
   });
-  
+
   // Function to update settings
-  const updateSettings = (newSettings) => {
+  const updateSettings = async (newSettings) => {
+    // Optimistically update state
     setSettings(prevSettings => ({
       ...prevSettings,
       ...newSettings
     }));
-    
-    // In a real app, you would save this to localStorage or a database
-    // For demo purposes, we'll add localStorage persistence
+
+    // Save to localStorage as backup
     localStorage.setItem('stocker_settings', JSON.stringify({
       ...settings,
       ...newSettings
     }));
-  };
-  
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const savedSettings = localStorage.getItem('stocker_settings');
-    if (savedSettings) {
-      try {
-        setSettings(JSON.parse(savedSettings));
-      } catch (e) {
-        console.error('Error loading settings:', e);
-      }
+
+    // Save to backend
+    try {
+      const { settingsService } = require('../services/api');
+      await settingsService.updateSettings(newSettings);
+    } catch (error) {
+      console.error('Failed to save settings to server:', error);
+      // Optionally revert state if failure
     }
+  };
+
+  // Load settings from backend on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { settingsService } = require('../services/api');
+        const serverSettings = await settingsService.getSettings();
+
+        if (serverSettings) {
+          setSettings(prev => ({
+            ...prev,
+            ...serverSettings
+          }));
+          // Sync localStorage
+          localStorage.setItem('stocker_settings', JSON.stringify(serverSettings));
+        } else {
+          // Fallback to localStorage if server fails or returns empty
+          const savedSettings = localStorage.getItem('stocker_settings');
+          if (savedSettings) {
+            setSettings(JSON.parse(savedSettings));
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching settings:', e);
+        // Fallback to localStorage
+        const savedSettings = localStorage.getItem('stocker_settings');
+        if (savedSettings) {
+          setSettings(JSON.parse(savedSettings));
+        }
+      }
+    };
+
+    fetchSettings();
   }, []);
-  
+
   return (
     <AppSettingsContext.Provider value={{ settings, updateSettings }}>
       {children}

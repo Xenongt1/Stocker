@@ -43,7 +43,7 @@ router.post('/register', [
 
         // Create user
         const user = await User.create(userData);
-        
+
         // Generate token
         const token = User.generateAuthToken(user);
 
@@ -83,10 +83,10 @@ router.post('/login', [
 
     try {
         const { username, password } = req.body;
-        
+
         // Get user from database
         const result = await pool.query(
-            'SELECT * FROM users WHERE username = $1',
+            'SELECT * FROM users WHERE username = ?',
             [username]
         );
 
@@ -117,7 +117,7 @@ router.post('/login', [
 
         // Generate token with correct structure
         const token = jwt.sign(
-            { 
+            {
                 user: {
                     id: user.id,
                     username: user.username,
@@ -133,6 +133,12 @@ router.post('/login', [
             username: user.username,
             role: user.role
         });
+
+        // Update last_login
+        await pool.query(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
+            [user.id]
+        );
 
         res.json({
             token,
@@ -157,7 +163,7 @@ router.post('/login', [
 router.get('/me', auth, async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, email, role, first_name, last_name FROM users WHERE id = $1',
+            'SELECT id, username, email, role, first_name, last_name FROM users WHERE id = ?',
             [req.user.id]
         );
 
@@ -167,9 +173,10 @@ router.get('/me', auth, async (req, res) => {
 
         res.json(result.rows[0]);
     } catch (error) {
-        console.error('Profile fetch error:', error);
+        console.error('Profile fetch error details:', error);
+        console.error('req.user was:', req.user);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-module.exports = router; 
+module.exports = router;

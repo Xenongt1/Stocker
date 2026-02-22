@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
 // Get a single product
 router.get('/:id', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM products WHERE id = $1', [req.params.id]);
+        const result = await pool.query('SELECT * FROM products WHERE id = ?', [req.params.id]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
@@ -51,7 +51,7 @@ router.get('/:id', async (req, res) => {
 // Create a new product
 router.post('/', async (req, res) => {
     const { name, description, sku, price, costPrice, quantity, category, minStockLevel } = req.body;
-    
+
     try {
         // Validate required fields
         if (!name || !sku || !price) {
@@ -77,17 +77,27 @@ router.post('/', async (req, res) => {
         }
 
         // Check if SKU already exists
-        const skuCheck = await pool.query('SELECT id FROM products WHERE sku = $1', [sku]);
+        const skuCheck = await pool.query('SELECT id FROM products WHERE sku = ?', [sku]);
         if (skuCheck.rows.length > 0) {
             return res.status(400).json({ error: 'SKU already exists' });
+        }
+
+        // Resolve category_id from name
+        let categoryId = null;
+        if (category) {
+            const catResult = await pool.query('SELECT id FROM categories WHERE name = ?', [category]);
+            if (catResult.rows.length > 0) {
+                categoryId = catResult.rows[0].id;
+            } else {
+                return res.status(400).json({ error: `Category '${category}' not found. Please create it first.` });
+            }
         }
 
         const result = await pool.query(
             `INSERT INTO products (
                 name, description, sku, price, cost_price, 
-                quantity, category, min_stock_level
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-            RETURNING *`,
+                quantity, category_id, min_stock_level
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 name,
                 description || '',
@@ -95,13 +105,15 @@ router.post('/', async (req, res) => {
                 numericPrice,
                 numericCostPrice,
                 numericQuantity,
-                category || null,
+                categoryId,
                 numericMinStockLevel
             ]
         );
-        
+
+        const newProduct = await pool.query('SELECT * FROM products WHERE id = ?', [result.rows.insertId]);
+
         // Parse numeric fields before sending response
-        const parsedProduct = parseNumericFields(result.rows[0]);
+        const parsedProduct = parseNumericFields(newProduct.rows[0]);
         console.log('Product created successfully:', parsedProduct);
         res.status(201).json(parsedProduct);
     } catch (err) {
@@ -113,7 +125,7 @@ router.post('/', async (req, res) => {
 // Update a product
 router.put('/:id', async (req, res) => {
     const { name, description, sku, price, costPrice, quantity, category, minStockLevel } = req.body;
-    
+
     try {
         // Validate required fields
         if (!name || !sku || !price) {
@@ -139,24 +151,34 @@ router.put('/:id', async (req, res) => {
         }
 
         // Check if SKU already exists for other products
-        const skuCheck = await pool.query('SELECT id FROM products WHERE sku = $1 AND id != $2', [sku, req.params.id]);
+        const skuCheck = await pool.query('SELECT id FROM products WHERE sku = ? AND id != ?', [sku, req.params.id]);
         if (skuCheck.rows.length > 0) {
             return res.status(400).json({ error: 'SKU already exists' });
         }
 
+        // Resolve category_id from name
+        let categoryId = null;
+        if (category) {
+            const catResult = await pool.query('SELECT id FROM categories WHERE name = ?', [category]);
+            if (catResult.rows.length > 0) {
+                categoryId = catResult.rows[0].id;
+            } else {
+                return res.status(400).json({ error: `Category '${category}' not found. Please create it first.` });
+            }
+        }
+
         const result = await pool.query(
             `UPDATE products SET 
-                name = $1, 
-                description = $2, 
-                sku = $3, 
-                price = $4, 
-                cost_price = $5, 
-                quantity = $6, 
-                category = $7, 
-                min_stock_level = $8,
+                name = ?, 
+                description = ?, 
+                sku = ?, 
+                price = ?, 
+                cost_price = ?, 
+                quantity = ?, 
+                category_id = ?, 
+                min_stock_level = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $9 
-            RETURNING *`,
+            WHERE id = ?`,
             [
                 name,
                 description || '',
@@ -164,18 +186,20 @@ router.put('/:id', async (req, res) => {
                 numericPrice,
                 numericCostPrice,
                 numericQuantity,
-                category || null,
+                categoryId,
                 numericMinStockLevel,
                 req.params.id
             ]
         );
 
-        if (result.rows.length === 0) {
+        if (result.rows.affectedRows === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
-        
+
+        const updatedProduct = await pool.query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+
         // Parse numeric fields before sending response
-        const parsedProduct = parseNumericFields(result.rows[0]);
+        const parsedProduct = parseNumericFields(updatedProduct.rows[0]);
         console.log('Product updated successfully:', parsedProduct);
         res.json(parsedProduct);
     } catch (err) {
@@ -187,8 +211,8 @@ router.put('/:id', async (req, res) => {
 // Delete a product
 router.delete('/:id', async (req, res) => {
     try {
-        const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [req.params.id]);
-        if (result.rows.length === 0) {
+        const result = await pool.query('DELETE FROM products WHERE id = ?', [req.params.id]);
+        if (result.rows.affectedRows === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
         res.json({ message: 'Product deleted successfully' });

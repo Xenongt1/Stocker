@@ -15,7 +15,7 @@ router.get('/', auth, async (req, res) => {
             SELECT 
                 c.*,
                 COALESCE(SUM(s.total - s.amount_paid), 0) as total_credit,
-                COUNT(DISTINCT s.id) FILTER (WHERE s.payment_status IN ('partial', 'credit')) as pending_sales
+                COUNT(DISTINCT CASE WHEN s.payment_status IN ('partial', 'credit') THEN s.id END) as pending_sales
             FROM customers c
             LEFT JOIN sales s ON c.id = s.customer_id AND s.payment_status IN ('partial', 'credit')
             GROUP BY c.id
@@ -52,12 +52,13 @@ router.post('/', [
     try {
         const result = await pool.query(
             `INSERT INTO customers (name, email, phone, address)
-             VALUES ($1, $2, $3, $4)
-             RETURNING *`,
+             VALUES (?, ?, ?, ?)`,
             [name, email, phone, address]
         );
 
-        res.status(201).json(result.rows[0]);
+        const newCustomer = await pool.query('SELECT * FROM customers WHERE id = ?', [result.rows.insertId]);
+
+        res.status(201).json(newCustomer.rows[0]);
     } catch (err) {
         console.error('Error creating customer:', err);
         res.status(500).json({ error: 'Failed to create customer' });
@@ -76,10 +77,10 @@ router.get('/:id', auth, async (req, res) => {
             SELECT 
                 c.*,
                 COALESCE(SUM(s.total - s.amount_paid), 0) as total_credit,
-                COUNT(DISTINCT s.id) FILTER (WHERE s.payment_status IN ('partial', 'credit')) as pending_sales
+                COUNT(DISTINCT CASE WHEN s.payment_status IN ('partial', 'credit') THEN s.id END) as pending_sales
             FROM customers c
             LEFT JOIN sales s ON c.id = s.customer_id AND s.payment_status IN ('partial', 'credit')
-            WHERE c.id = $1
+            WHERE c.id = ?
             GROUP BY c.id
         `, [req.params.id]);
 
@@ -95,17 +96,17 @@ router.get('/:id', auth, async (req, res) => {
                 s.total,
                 s.amount_paid,
                 s.payment_status,
-                json_agg(
-                    json_build_object(
+                JSON_ARRAYAGG(
+                    IF(cp.id IS NULL, NULL, JSON_OBJECT(
                         'id', cp.id,
                         'amount', cp.amount,
                         'payment_date', cp.payment_date,
                         'payment_method', cp.payment_method
-                    )
-                ) FILTER (WHERE cp.id IS NOT NULL) as payments
+                    ))
+                ) as payments
             FROM sales s
             LEFT JOIN credit_payments cp ON s.id = cp.sale_id
-            WHERE s.customer_id = $1 AND s.payment_status IN ('partial', 'credit')
+            WHERE s.customer_id = ? AND s.payment_status IN ('partial', 'credit')
             GROUP BY s.id
             ORDER BY s.created_at DESC
         `, [req.params.id]);
@@ -147,7 +148,7 @@ router.post('/:id/payments', [
 
         // Get sale details
         const saleResult = await client.query(
-            'SELECT * FROM sales WHERE id = $1 AND customer_id = $2',
+            'SELECT * FROM sales WHERE id = ? AND customer_id = ?',
             [saleId, req.params.id]
         );
 
@@ -162,21 +163,22 @@ router.post('/:id/payments', [
             throw new Error('Payment amount exceeds remaining balance');
         }
 
+        // Create payment
         // Record payment
         await client.query(
             `INSERT INTO credit_payments (sale_id, amount, payment_method, created_by)
-             VALUES ($1, $2, $3, $4)`,
+             VALUES (?, ?, ?, ?)`,
             [saleId, amount, paymentMethod, req.user.id]
         );
 
         // Update sale
-        const newAmountPaid = sale.amount_paid + amount;
-        const newPaymentStatus = newAmountPaid >= sale.total ? 'paid' : 'partial';
+        const newAmountPaid = parseFloat(sale.amount_paid) + parseFloat(amount);
+        const newPaymentStatus = newAmountPaid >= parseFloat(sale.total) ? 'paid' : 'partial';
 
         await client.query(
             `UPDATE sales 
-             SET amount_paid = $1, payment_status = $2
-             WHERE id = $3`,
+             SET amount_paid = ?, payment_status = ?
+             WHERE id = ?`,
             [newAmountPaid, newPaymentStatus, saleId]
         );
 

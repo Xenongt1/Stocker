@@ -24,10 +24,11 @@ services:
         generateValue: true
 
   # Frontend Service
-  - type: static_site
+  - type: web
     name: stocker-frontend
+    env: static
     buildCommand: npm install && npm run build
-    publishPath: ./build
+    staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
         fromService:
